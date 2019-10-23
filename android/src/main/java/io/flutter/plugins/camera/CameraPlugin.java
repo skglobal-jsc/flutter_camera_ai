@@ -67,7 +67,13 @@ public class CameraPlugin implements MethodCallHandler {
     private static final int CAMERA_REQUEST_ID = 513469796;
     private static final String TAG = "CameraPlugin";
     private final static boolean IS_NEXUS_5X = Build.MODEL.equalsIgnoreCase("Nexus 5X");
-    private final static boolean IS_HUAWEI_BRAND = Build.MODEL.equalsIgnoreCase("HUAWEI");
+    private final static boolean IS_HUAWEI_BRAND = Build.MANUFACTURER.equalsIgnoreCase("HUAWEI");
+    private final String SONY_DEVICE = "Sony";
+    private final String FUJITSU_DEVICE = "FUJITSU";
+    private final String SAMSUNG_DEVICE = "samsung";
+    private final String HUAWEI_DEVICE = "huawei";
+    private final String XIAOMI_DEVICE = "Xiaomi";
+    private final String GOOGLE_DEVICE = "Google";
     private final static boolean IS_7_0_AND_ABOVE = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N;
 
     private static MethodChannel channel;
@@ -85,6 +91,8 @@ public class CameraPlugin implements MethodCallHandler {
         MovingDetectorJNI.newInstance();
         this.registrar = registrar;
         this.view = view;
+
+        Log.d("IS_HUAWEI_BRAND:", Build.MANUFACTURER + "");
 
         orientationEventListener =
                 new OrientationEventListener(registrar.activity().getApplicationContext()) {
@@ -736,8 +744,18 @@ public class CameraPlugin implements MethodCallHandler {
 
             Surface previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
-            captureRequestBuilder.addTarget(previewSurface);
+            if(!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)){
+                if(android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)){
+                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
 
+                } else if(android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)){
+                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+                } else {
+                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+                }
+            }
+
+            captureRequestBuilder.addTarget(previewSurface);
             surfaces.add(pictureImageReader.getSurface());
 
             cameraDevice.createCaptureSession(
@@ -752,14 +770,12 @@ public class CameraPlugin implements MethodCallHandler {
                             }
                             try {
                                 cameraCaptureSession = session;
-                                captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
-                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                                        IS_HUAWEI_BRAND ?
-                                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE :
-                                        CaptureRequest.CONTROL_AF_MODE_AUTO);
-//                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
-
+                                 if(android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+                                     captureRequestBuilder.set(
+                                             CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+                                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+                                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+                                 }
                                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
@@ -787,6 +803,17 @@ public class CameraPlugin implements MethodCallHandler {
 
             Surface previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
+            if(!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)){
+                captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+                if(android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)){
+                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+
+                } else if(android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)){
+                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+                } else {
+                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+                }
+            }
             captureRequestBuilder.addTarget(previewSurface);
 
             surfaces.add(imageStreamReader.getSurface());
@@ -803,8 +830,9 @@ public class CameraPlugin implements MethodCallHandler {
                             }
                             try {
                                 cameraCaptureSession = session;
-                                captureRequestBuilder.set(
-                                        CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+                                 if(android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+                                     captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+                                 }
                                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
