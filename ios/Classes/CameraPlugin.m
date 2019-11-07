@@ -142,8 +142,7 @@ FlutterStreamHandler>
 @property(assign, nonatomic) BOOL isAudioSetup;
 @property(assign, nonatomic) BOOL isStreamingImages;
 @property(nonatomic) CMMotionManager *motionManager;
-@property (strong) dispatch_semaphore_t streamImageSemaphore;
-@property (nonatomic) CMSampleBufferRef retainSampleBuffer;
+@property (assign) int frameSkipped;
 
 - (instancetype)initWithCameraName:(NSString *)cameraName
                   resolutionPreset:(NSString *)resolutionPreset
@@ -164,7 +163,7 @@ FlutterStreamHandler>
     dispatch_queue_t _dispatchQueue;
 }
 
-@synthesize streamImageSemaphore;
+@synthesize frameSkipped;
 // Format used for video and image streaming.
 FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 
@@ -175,14 +174,17 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
                              error:(NSError **)error {
     self = [super init];
     NSAssert(self, @"super init cannot be nil");
-    streamImageSemaphore = dispatch_semaphore_create(0);
     
     _enableAudio = enableAudio;
     _dispatchQueue = dispatchQueue;
     _captureSession = [[AVCaptureSession alloc] init];
     
     _captureDevice = [AVCaptureDevice deviceWithUniqueID:cameraName];
-
+    [_captureDevice lockForConfiguration:nil];
+    _captureDevice.activeVideoMinFrameDuration = CMTimeMake(1, 20);
+    _captureDevice.activeVideoMaxFrameDuration = CMTimeMake(1, 25);
+    [_captureDevice unlockForConfiguration];
+    
     NSError *localError = nil;
     _captureVideoInput = [AVCaptureDeviceInput deviceInputWithDevice:_captureDevice
                                                                error:&localError];
@@ -326,75 +328,64 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
         return;
     }
     if (_isStreamingImages) {
-        if (_imageStreamHandler.eventSink && dispatch_semaphore_wait(streamImageSemaphore, DISPATCH_TIME_NOW)) {
-            // Release old one before next use
-            if (_retainSampleBuffer) {
-                CFRelease(_retainSampleBuffer);
-                _retainSampleBuffer = nil;
-            }
-            // Copy to local var to keep sampleBuffer
-            CMSampleBufferCreateCopy(kCFAllocatorDefault, sampleBuffer, &_retainSampleBuffer);
-            __weak FLTCam *strongSelf = self;
+        // 3 frame skip 2 before send to flutter
+        frameSkipped = (frameSkipped ?: 0) + 1;
+        if (_imageStreamHandler.eventSink && frameSkipped >= 3) {
+            frameSkipped = 0;
+            CVPixelBufferRef pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+            CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
             
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                CVPixelBufferRef pixelBuffer = CMSampleBufferGetImageBuffer(strongSelf.retainSampleBuffer);
-                CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+            size_t imageWidth = CVPixelBufferGetWidth(pixelBuffer);
+            size_t imageHeight = CVPixelBufferGetHeight(pixelBuffer);
+            
+            NSMutableArray *planes = [NSMutableArray array];
+            
+            const Boolean isPlanar = CVPixelBufferIsPlanar(pixelBuffer);
+            size_t planeCount;
+            if (isPlanar) {
+                planeCount = CVPixelBufferGetPlaneCount(pixelBuffer);
+            } else {
+                planeCount = 1;
+            }
+            
+            for (int i = 0; i < planeCount; i++) {
+                void *planeAddress;
+                size_t bytesPerRow;
+                size_t height;
+                size_t width;
                 
-                size_t imageWidth = CVPixelBufferGetWidth(pixelBuffer);
-                size_t imageHeight = CVPixelBufferGetHeight(pixelBuffer);
-                
-                NSMutableArray *planes = [NSMutableArray array];
-                
-                const Boolean isPlanar = CVPixelBufferIsPlanar(pixelBuffer);
-                size_t planeCount;
                 if (isPlanar) {
-                    planeCount = CVPixelBufferGetPlaneCount(pixelBuffer);
+                    planeAddress = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, i);
+                    bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, i);
+                    height = CVPixelBufferGetHeightOfPlane(pixelBuffer, i);
+                    width = CVPixelBufferGetWidthOfPlane(pixelBuffer, i);
                 } else {
-                    planeCount = 1;
+                    planeAddress = CVPixelBufferGetBaseAddress(pixelBuffer);
+                    bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
+                    height = CVPixelBufferGetHeight(pixelBuffer);
+                    width = CVPixelBufferGetWidth(pixelBuffer);
                 }
                 
-                for (int i = 0; i < planeCount; i++) {
-                    void *planeAddress;
-                    size_t bytesPerRow;
-                    size_t height;
-                    size_t width;
-                    
-                    if (isPlanar) {
-                        planeAddress = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, i);
-                        bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, i);
-                        height = CVPixelBufferGetHeightOfPlane(pixelBuffer, i);
-                        width = CVPixelBufferGetWidthOfPlane(pixelBuffer, i);
-                    } else {
-                        planeAddress = CVPixelBufferGetBaseAddress(pixelBuffer);
-                        bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer);
-                        height = CVPixelBufferGetHeight(pixelBuffer);
-                        width = CVPixelBufferGetWidth(pixelBuffer);
-                    }
-                    
-                    NSNumber *length = @(bytesPerRow * height);
-                    NSData *bytes = [NSData dataWithBytes:planeAddress length:length.unsignedIntegerValue];
-                    
-                    NSMutableDictionary *planeBuffer = [NSMutableDictionary dictionary];
-                    planeBuffer[@"bytesPerRow"] = @(bytesPerRow);
-                    planeBuffer[@"width"] = @(width);
-                    planeBuffer[@"height"] = @(height);
-                    planeBuffer[@"bytes"] = [FlutterStandardTypedData typedDataWithBytes:bytes];
-                    
-                    [planes addObject:planeBuffer];
-                }
+                NSNumber *length = @(bytesPerRow * height);
+                NSData *bytes = [NSData dataWithBytes:planeAddress length:length.unsignedIntegerValue];
                 
-                NSMutableDictionary *imageBuffer = [NSMutableDictionary dictionary];
-                imageBuffer[@"width"] = [NSNumber numberWithUnsignedLong:imageWidth];
-                imageBuffer[@"height"] = [NSNumber numberWithUnsignedLong:imageHeight];
-                imageBuffer[@"format"] = @(videoFormat);
-                imageBuffer[@"planes"] = planes;
+                NSMutableDictionary *planeBuffer = [NSMutableDictionary dictionary];
+                planeBuffer[@"bytesPerRow"] = @(bytesPerRow);
+                planeBuffer[@"width"] = @(width);
+                planeBuffer[@"height"] = @(height);
+                planeBuffer[@"bytes"] = [FlutterStandardTypedData typedDataWithBytes:bytes];
                 
-                CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    strongSelf.imageStreamHandler.eventSink(imageBuffer);
-                    dispatch_semaphore_signal(strongSelf.streamImageSemaphore);
-                });
-            });
+                [planes addObject:planeBuffer];
+            }
+            
+            NSMutableDictionary *imageBuffer = [NSMutableDictionary dictionary];
+            imageBuffer[@"width"] = [NSNumber numberWithUnsignedLong:imageWidth];
+            imageBuffer[@"height"] = [NSNumber numberWithUnsignedLong:imageHeight];
+            imageBuffer[@"format"] = @(videoFormat);
+            imageBuffer[@"planes"] = planes;
+            
+            self.imageStreamHandler.eventSink(imageBuffer);
+            CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
         }
     }
     if (_isRecording) {
