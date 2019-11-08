@@ -85,6 +85,7 @@ public class CameraPlugin implements MethodCallHandler {
     private Runnable cameraPermissionContinuation;
     private final OrientationEventListener orientationEventListener;
     private int currentOrientation = ORIENTATION_UNKNOWN;
+    private boolean isFrameMode = false;
 
 
     private CameraPlugin(Registrar registrar, FlutterView view) {
@@ -221,6 +222,11 @@ public class CameraPlugin implements MethodCallHandler {
                 int h = call.argument("height");
                 boolean isDiff = camera.isDiffFrame(w, h, bytesOfImg1, bytesOfImg2);
                 result.success(isDiff);
+                break;
+            }
+            case "setFrameModeEnable": {
+                isFrameMode = call.arguments != null ? call.arguments.toString().equals("YES") : false;
+                result.success(true);
                 break;
             }
             default:
@@ -902,7 +908,9 @@ public class CameraPlugin implements MethodCallHandler {
                             eventSink.success(imageBuffer);
 
 //                            // read stable status use native-lib of Giang san
-                            handleStableStateFrameByFrame(image.getWidth(), image.getHeight(), buffers);
+                            if (isFrameMode) {
+                                handleStableStateFrameByFrame(image.getWidth(), image.getHeight(), buffers);
+                            }
 
                             // force close img object
                             image.close();
