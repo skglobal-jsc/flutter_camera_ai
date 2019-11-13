@@ -145,6 +145,8 @@ FlutterStreamHandler>
 @property(assign, nonatomic) BOOL isStreamingImages;
 @property(nonatomic) CMMotionManager *motionManager;
 @property (assign) int frameSkipped;
+@property (strong) NSTimer *checkTorchTimer;
+@property (assign) BOOL oneTimeCheckTorchEnable;
 
 - (instancetype)initWithCameraName:(NSString *)cameraName
                   resolutionPreset:(NSString *)resolutionPreset
@@ -159,6 +161,7 @@ FlutterStreamHandler>
 - (void)startImageStreamWithMessenger:(NSObject<FlutterBinaryMessenger> *)messenger;
 - (void)stopImageStream;
 - (void)captureToFile:(NSString *)filename result:(FlutterResult)result;
+- (void)setTorchEnable:(BOOL)isEnable;
 @end
 
 @implementation FLTCam {
@@ -166,6 +169,8 @@ FlutterStreamHandler>
 }
 
 @synthesize frameSkipped;
+@synthesize checkTorchTimer, oneTimeCheckTorchEnable;
+
 // Format used for video and image streaming.
 FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 
@@ -185,6 +190,9 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     [_captureDevice lockForConfiguration:nil];
     _captureDevice.activeVideoMinFrameDuration = CMTimeMake(1, 20);
     _captureDevice.activeVideoMaxFrameDuration = CMTimeMake(1, 25);
+    if (_captureDevice.isTorchAvailable) {
+        [_captureDevice setTorchMode:(AVCaptureTorchModeAuto)];
+    }
     [_captureDevice unlockForConfiguration];
     
     NSError *localError = nil;
@@ -229,8 +237,41 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     [self setCaptureSessionPreset:resolutionPreset];
     
     [_captureSession commitConfiguration];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self configCheckTorchTimer];
+    });
     
     return self;
+}
+
+-(void)configCheckTorchTimer {
+    if (_captureDevice == NULL || !_captureDevice.isTorchAvailable) return;
+    if (checkTorchTimer) {
+        [checkTorchTimer invalidate];
+        checkTorchTimer = NULL;
+    }
+    oneTimeCheckTorchEnable = NO;
+    checkTorchTimer = [NSTimer scheduledTimerWithTimeInterval:5.0f repeats:YES block:^(NSTimer * _Nonnull timer) {
+        self->oneTimeCheckTorchEnable = YES;
+    }];
+}
+- (void)setTorchEnable:(BOOL)isEnable {
+    // If manually call this function, auto flash will disable
+    [self disableAutoTorch];
+    if (_captureDevice && _captureDevice.isTorchAvailable) {
+        [_captureDevice lockForConfiguration:nil];
+        [_captureDevice setTorchMode:isEnable ? AVCaptureTorchModeOn : AVCaptureTorchModeOff];
+        [_captureDevice unlockForConfiguration];
+    }
+}
+- (void)disableAutoTorch {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->checkTorchTimer) {
+            [self->checkTorchTimer invalidate];
+            self->checkTorchTimer = NULL;
+        }
+        self->oneTimeCheckTorchEnable = NO;
+    });
 }
 
 - (void)start {
@@ -336,6 +377,31 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
             frameSkipped = 0;
             CVPixelBufferRef pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
             CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+            if (oneTimeCheckTorchEnable && _captureDevice.torchAvailable) {
+                CFDictionaryRef metadataDict = CMCopyDictionaryOfAttachments(NULL, sampleBuffer, kCMAttachmentMode_ShouldPropagate);
+                NSDictionary *metadata = [[NSMutableDictionary alloc] initWithDictionary:(__bridge NSDictionary*)metadataDict];
+                CFRelease(metadataDict);
+                NSDictionary *exifMetadata = [[metadata objectForKey:(NSString *)kCGImagePropertyExifDictionary] mutableCopy];
+                double brightnessValue = [[exifMetadata objectForKey:(NSString *)kCGImagePropertyExifBrightnessValue] doubleValue];
+                BOOL flashEnabled = _captureDevice.torchActive;
+                // Flash on + brightness >= 3   -> Turnoff flash
+                // Flash on + brightness < 3    -> Do nothing
+                // -----
+                // Flash off + brightness < 0   -> Turn on flash
+                // Flash off + brightness >= 0  -> Do nothing
+                BOOL isChange = (flashEnabled && brightnessValue >= 3) || (!flashEnabled && brightnessValue < 0);
+                
+                if (isChange) {
+                    [_captureDevice lockForConfiguration:nil];
+                    if (flashEnabled && brightnessValue >= 3) {
+                        [_captureDevice setTorchMode:AVCaptureTorchModeOff];
+                    } else if (!flashEnabled && brightnessValue < 0) {
+                        [_captureDevice setTorchMode:AVCaptureTorchModeOn];
+                    }
+                    [_captureDevice unlockForConfiguration];
+                }
+                oneTimeCheckTorchEnable = NO;
+            }
             
             size_t imageWidth = CVPixelBufferGetWidth(pixelBuffer);
             size_t imageHeight = CVPixelBufferGetHeight(pixelBuffer);
@@ -807,6 +873,10 @@ CameraPlugin *currentCameraPluginInstance = nil;
                 [strongSelf.registry textureFrameAvailable:lastTxId];
             };
         }
+    } else if ([@"setTorchEnable" isEqualToString:call.method]) {
+        BOOL isEnable = [(NSNumber*)call.arguments boolValue];
+        NSLog(@"setTorchEnable: %d", isEnable);
+        [_camera setTorchEnable:isEnable];
     } else {
         NSDictionary *argsMap = call.arguments;
         NSUInteger textureId = ((NSNumber *)argsMap[@"textureId"]).unsignedIntegerValue;

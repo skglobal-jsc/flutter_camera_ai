@@ -293,6 +293,11 @@ class CameraController extends ValueNotifier<CameraValue> {
     return _creatingCompleter.future;
   }
 
+  // Manually enable torch
+  Future<void> setTorchEnable(bool enable) async {
+    return _channel.invokeMethod<void>('setTorchEnable', enable);
+  }
+
   /// Prepare the capture session for video recording.
   ///
   /// Use of this method is optional, but it may be called for performance
