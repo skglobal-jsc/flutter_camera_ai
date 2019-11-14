@@ -229,6 +229,21 @@ public class CameraPlugin implements MethodCallHandler {
                 result.success(true);
                 break;
             }
+            case "setTorchEnable": {
+                boolean turnOn =  (boolean) call.arguments;
+                try {
+                    if (camera != null) {
+                        camera.enableFlash = turnOn;
+                        camera.startPreviewWithImageStream();
+                        result.success(true);
+                    } else {
+                        result.error("Camera is NULL", "", "");
+                    }
+                } catch (Exception e) {
+                    handleException(e, result);
+                }
+                break;
+            }
             default:
                 result.notImplemented();
                 break;
@@ -271,6 +286,7 @@ public class CameraPlugin implements MethodCallHandler {
     private class Camera {
         private final FlutterView.SurfaceTextureEntry textureEntry;
         private CameraDevice cameraDevice;
+        private Surface previewSurface;
         private CameraCaptureSession cameraCaptureSession;
         private EventChannel.EventSink eventSink;
         private ImageReader pictureImageReader;
@@ -285,6 +301,7 @@ public class CameraPlugin implements MethodCallHandler {
         private MediaRecorder mediaRecorder;
         private boolean recordingVideo;
         private boolean enableAudio;
+        private boolean enableFlash = false;
 
         Camera(
                 final String cameraName,
@@ -679,7 +696,7 @@ public class CameraPlugin implements MethodCallHandler {
 
                 List<Surface> surfaces = new ArrayList<>();
 
-                Surface previewSurface = new Surface(surfaceTexture);
+                previewSurface = new Surface(surfaceTexture);
                 surfaces.add(previewSurface);
                 captureRequestBuilder.addTarget(previewSurface);
 
@@ -748,7 +765,7 @@ public class CameraPlugin implements MethodCallHandler {
 
             List<Surface> surfaces = new ArrayList<>();
 
-            Surface previewSurface = new Surface(surfaceTexture);
+            previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
             if(!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)){
                 if(android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)){
@@ -764,12 +781,14 @@ public class CameraPlugin implements MethodCallHandler {
             captureRequestBuilder.addTarget(previewSurface);
             surfaces.add(pictureImageReader.getSurface());
 
+            printLog("Preview: Configured camera capture session");
             cameraDevice.createCaptureSession(
                     surfaces,
                     new CameraCaptureSession.StateCallback() {
 
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession session) {
+                            printLog("Preview: Configured camera capture session");
                             if (cameraDevice == null) {
                                 sendErrorEvent("The camera was closed during configuration.");
                                 return;
@@ -807,10 +826,9 @@ public class CameraPlugin implements MethodCallHandler {
 
             List<Surface> surfaces = new ArrayList<>();
 
-            Surface previewSurface = new Surface(surfaceTexture);
+            previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
             if(!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)){
-                captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
                 if(android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)){
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
 
@@ -820,16 +838,19 @@ public class CameraPlugin implements MethodCallHandler {
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
                 }
             }
+            captureRequestBuilder.set(CaptureRequest.FLASH_MODE, enableFlash ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
             captureRequestBuilder.addTarget(previewSurface);
 
             surfaces.add(imageStreamReader.getSurface());
             captureRequestBuilder.addTarget(imageStreamReader.getSurface());
 
+            printLog("ImageStream: Start create capture session");
             cameraDevice.createCaptureSession(
                     surfaces,
                     new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession session) {
+                            printLog("ImageStream: Configured camera capture session");
                             if (cameraDevice == null) {
                                 sendErrorEvent("The camera was closed during configuration.");
                                 return;
@@ -1065,6 +1086,7 @@ public class CameraPlugin implements MethodCallHandler {
         }
 
         private void closeCaptureSession() {
+            printLog("Request close capture session");
             if (cameraCaptureSession != null) {
                 cameraCaptureSession.close();
                 cameraCaptureSession = null;
@@ -1105,5 +1127,9 @@ public class CameraPlugin implements MethodCallHandler {
                             : (isFrontFacing) ? -currentOrientation : currentOrientation;
             return (sensorOrientationOffset + sensorOrientation + 360) % 360;
         }
+    }
+
+    static void printLog(String message) {
+        Log.d("CAMERA2", message);
     }
 }

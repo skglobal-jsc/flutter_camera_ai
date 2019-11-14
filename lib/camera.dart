@@ -294,7 +294,7 @@ class CameraController extends ValueNotifier<CameraValue> {
   }
 
   // Manually enable torch
-  Future<void> setTorchEnable(bool enable) async {
+  Future setTorchEnable(bool enable) async {
     return _channel.invokeMethod<void>('setTorchEnable', enable);
   }
 
