@@ -136,6 +136,8 @@ public class CameraPlugin implements MethodCallHandler {
                         HashMap<String, Object> details = new HashMap<>();
                         CameraCharacteristics characteristics =
                                 cameraManager.getCameraCharacteristics(cameraName);
+                        int[] flashModeValues = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES);
+//                        Log.d(TAG, "flash " + Arrays.toString(flashModeValues));
                         details.put("name", cameraName);
                         @SuppressWarnings("ConstantConditions")
                         int sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
@@ -233,8 +235,7 @@ public class CameraPlugin implements MethodCallHandler {
                 boolean turnOn =  (boolean) call.arguments;
                 try {
                     if (camera != null) {
-                        camera.enableFlash = turnOn;
-                        camera.startPreviewWithImageStream();
+                        camera.turnFlashLight(turnOn);
                         result.success(true);
                     } else {
                         result.error("Camera is NULL", "", "");
@@ -815,6 +816,17 @@ public class CameraPlugin implements MethodCallHandler {
                     null);
         }
 
+        private void turnFlashLight(boolean turnOn) {
+            try {
+                cameraCaptureSession.stopRepeating();
+                captureRequestBuilder.set(CaptureRequest.FLASH_MODE,
+                        turnOn ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
+                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
         private void startPreviewWithImageStream() throws CameraAccessException {
             closeCaptureSession();
 
@@ -825,6 +837,8 @@ public class CameraPlugin implements MethodCallHandler {
                     cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
 
             List<Surface> surfaces = new ArrayList<>();
+
+
 
             previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
@@ -838,7 +852,6 @@ public class CameraPlugin implements MethodCallHandler {
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
                 }
             }
-            captureRequestBuilder.set(CaptureRequest.FLASH_MODE, enableFlash ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
             captureRequestBuilder.addTarget(previewSurface);
 
             surfaces.add(imageStreamReader.getSurface());
@@ -860,6 +873,13 @@ public class CameraPlugin implements MethodCallHandler {
                                  if(android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
                                      captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
                                  }
+//                                 // add flash auto for test, need to more research for auto flash more. Currently, it's work only on capture request
+//                                captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+//                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+//                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+//                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+//                                captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+
                                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
