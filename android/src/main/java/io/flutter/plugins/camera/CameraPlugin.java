@@ -86,6 +86,7 @@ public class CameraPlugin implements MethodCallHandler {
     private final OrientationEventListener orientationEventListener;
     private int currentOrientation = ORIENTATION_UNKNOWN;
     private boolean isFrameMode = false;
+    private boolean isFlashOn = false;
 
 
     private CameraPlugin(Registrar registrar, FlutterView view) {
@@ -822,6 +823,10 @@ public class CameraPlugin implements MethodCallHandler {
                 captureRequestBuilder.set(CaptureRequest.FLASH_MODE,
                         turnOn ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+
+                // notify for flutter layer
+                isFlashOn = turnOn;
+                channel.invokeMethod("camera.torchMode", isFlashOn);
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -880,7 +885,13 @@ public class CameraPlugin implements MethodCallHandler {
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
 
+                                captureRequestBuilder.set(CaptureRequest.FLASH_MODE,
+                                        isFlashOn ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
+
                                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+
+                                // send flash event
+                                channel.invokeMethod("camera.torchMode", isFlashOn);
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
                             }
