@@ -21,10 +21,12 @@ enum ResolutionPreset { low, medium, high }
 typedef onLatestImageAvailable = Function(CameraImage image);
 
 final _cameraStableBehavior = BehaviorSubject<bool>();
+final _cameraTorchModeBehavior = BehaviorSubject<bool>();
 
 Function(bool) get addCameraStable => _cameraStableBehavior.sink.add;
 Stream<bool> get cameraStableEvent => _cameraStableBehavior.stream;
-
+// Listen torchActive from native
+Stream<bool> get cameraTorchEvent => _cameraTorchModeBehavior.stream;
 
 Future<Null> initCamera() async {
   _channel.setMethodCallHandler(_platformCallHandler);
@@ -35,8 +37,14 @@ Future _platformCallHandler(MethodCall call) async {
     case "camera.stableDetected":
       addCameraStable(call.arguments as bool);
       break;
+    case "camera.torchMode":
+      bool isEnable = call.arguments as bool;
+      print('auto torch mode from native: $isEnable');
+      _cameraTorchModeBehavior.sink.add(isEnable);
+      break;
     default:
       print('Unknowm method ${call.method} ');
+      break;
   }
 }
 

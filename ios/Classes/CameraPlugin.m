@@ -120,6 +120,7 @@ previewPhotoSampleBuffer:(CMSampleBufferRef)previewPhotoSampleBuffer
 AVCaptureVideoDataOutputSampleBufferDelegate,
 AVCaptureAudioDataOutputSampleBufferDelegate,
 FlutterStreamHandler>
+@property (weak) id<FLTCamDelegate> delegate;
 @property(readonly, nonatomic) int64_t textureId;
 @property(nonatomic, copy) void (^onFrameAvailable)(void);
 @property BOOL enableAudio;
@@ -145,6 +146,8 @@ FlutterStreamHandler>
 @property(assign, nonatomic) BOOL isStreamingImages;
 @property(nonatomic) CMMotionManager *motionManager;
 @property (assign) int frameSkipped;
+// Only send torch state one time after start camera
+@property (assign) BOOL lastTorchModeState;
 
 - (instancetype)initWithCameraName:(NSString *)cameraName
                   resolutionPreset:(NSString *)resolutionPreset
@@ -166,7 +169,7 @@ FlutterStreamHandler>
     dispatch_queue_t _dispatchQueue;
 }
 
-@synthesize frameSkipped;
+@synthesize frameSkipped, lastTorchModeState;
 // Format used for video and image streaming.
 FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 
@@ -177,13 +180,14 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
                              error:(NSError **)error {
     self = [super init];
     NSAssert(self, @"super init cannot be nil");
-    
+    lastTorchModeState = NO;
     _enableAudio = enableAudio;
     _dispatchQueue = dispatchQueue;
     _captureSession = [[AVCaptureSession alloc] init];
     
     _captureDevice = [AVCaptureDevice deviceWithUniqueID:cameraName];
     [_captureDevice lockForConfiguration:nil];
+    [_captureDevice setTorchMode:AVCaptureTorchModeAuto];
     _captureDevice.activeVideoMinFrameDuration = CMTimeMake(1, 20);
     _captureDevice.activeVideoMaxFrameDuration = CMTimeMake(1, 25);
     [_captureDevice unlockForConfiguration];
@@ -341,6 +345,10 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
         // 3 frame skip 2 before send to flutter
         frameSkipped = (frameSkipped ?: 0) + 1;
         if (_imageStreamHandler.eventSink && frameSkipped >= 3) {
+            if (lastTorchModeState != _captureDevice.torchActive) {
+                lastTorchModeState = _captureDevice.torchActive;
+                [_delegate cameraTorchDidChange:lastTorchModeState];
+            }
             frameSkipped = 0;
             CVPixelBufferRef pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
             CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
@@ -749,6 +757,7 @@ CameraPlugin *currentCameraPluginInstance = nil;
                                              enableAudio:[enableAudio boolValue]
                                            dispatchQueue:_dispatchQueue
                                                    error:&error];
+        cam.delegate = self;
         if (error) {
             result(getFlutterError(error));
         } else {
@@ -842,6 +851,10 @@ CameraPlugin *currentCameraPluginInstance = nil;
             result(FlutterMethodNotImplemented);
         }
     }
+}
+
+-(void)cameraTorchDidChange:(BOOL)isActivate{
+    [self.channel invokeMethod:@"camera.torchMode" arguments:[NSNumber numberWithBool:isActivate]];
 }
 
 @end

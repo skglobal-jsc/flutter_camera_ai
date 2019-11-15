@@ -1,6 +1,10 @@
 #import <Flutter/Flutter.h>
 
-@interface CameraPlugin : NSObject <FlutterPlugin>
+@protocol FLTCamDelegate <NSObject>
+-(void)cameraTorchDidChange:(BOOL)isActivate;
+@end
+
+@interface CameraPlugin : NSObject <FlutterPlugin, FLTCamDelegate>
 + (CameraPlugin*) getCurrentInstance;
 @property(nonatomic, copy) bool (^isStable)(UIImage* image);
 @end
