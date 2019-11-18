@@ -1,16 +1,19 @@
 package io.flutter.plugins.camera;
 
+import static android.content.Context.SENSOR_SERVICE;
 import static android.view.OrientationEventListener.ORIENTATION_UNKNOWN;
 
 import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraCharacteristics;
@@ -33,8 +36,6 @@ import android.view.Surface;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import org.opencv.core.MatOfByte;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
@@ -49,7 +50,6 @@ import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.view.FlutterView;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -88,6 +88,10 @@ public class CameraPlugin implements MethodCallHandler {
     private boolean isFrameMode = false;
     private boolean isFlashOn = false;
 
+    // Detect flash by light sensor
+    private SensorManager mSensorManager;
+    private Sensor mLightSensor;
+
 
     private CameraPlugin(Registrar registrar, FlutterView view) {
         MovingDetectorJNI.newInstance();
@@ -109,6 +113,9 @@ public class CameraPlugin implements MethodCallHandler {
                 };
 
         registrar.addRequestPermissionsResultListener(new CameraRequestPermissionsListener());
+
+        // Register light sensor
+        registerLightSensor(registrar.activity());
     }
 
     public static void registerWith(Registrar registrar) {
@@ -120,10 +127,66 @@ public class CameraPlugin implements MethodCallHandler {
         }
 
         channel = new MethodChannel(registrar.messenger(), "plugins.flutter.io/camera");
-
         cameraManager = (CameraManager) registrar.activity().getSystemService(Context.CAMERA_SERVICE);
-
         channel.setMethodCallHandler(new CameraPlugin(registrar, registrar.view()));
+    }
+
+    final static double LIGHT_THROTTLE = 20.0;
+    final static int LIGHT_THROTTLE_TIMES = 3;
+    private int currentThrottleTimes = 0;
+    private boolean autoFlashLight = false;
+
+    // Implement a sensorLightListener to receive updates
+    SensorEventListener sensorLightListener = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            Log.d(TAG, "Light " + event.values[0]);
+
+            if (autoFlashLight) {
+                int sw = 0;
+                currentThrottleTimes += (event.values[0] > LIGHT_THROTTLE) ? 1 : -1;
+                if (currentThrottleTimes > LIGHT_THROTTLE_TIMES) {
+                    // turn on light
+                    sw = 1;
+                } else if (currentThrottleTimes < -1 * LIGHT_THROTTLE_TIMES) {
+                    // turn off light
+                    sw = -1;
+                }
+
+                if (sw != 0) {
+                    Log.d(TAG, "L " + sw);
+                    boolean turnOn = sw < 0;
+                    currentThrottleTimes = 0;
+                    if (camera != null && isFlashOn != turnOn) {
+                        camera.turnFlashLight(turnOn);
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int i) {
+        }
+    };
+
+    public void registerLightSensor(Activity activity) {
+        // Obtain references to the SensorManager and the Light Sensor
+        mSensorManager = (SensorManager) activity.getSystemService(SENSOR_SERVICE);
+        mLightSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
+    }
+
+    private void unregisterSensorLight() {
+        if (autoFlashLight) {
+            autoFlashLight = false; // turn off auto flash light
+            mSensorManager.unregisterListener(sensorLightListener);
+        }
+    }
+
+    private void registerSensorLight() {
+        if (autoFlashLight == false) {
+            autoFlashLight = true; // turn true auto flash light
+            mSensorManager.registerListener(sensorLightListener, mLightSensor, SensorManager.SENSOR_DELAY_UI);
+        }
     }
 
     @Override
@@ -137,7 +200,7 @@ public class CameraPlugin implements MethodCallHandler {
                         HashMap<String, Object> details = new HashMap<>();
                         CameraCharacteristics characteristics =
                                 cameraManager.getCameraCharacteristics(cameraName);
-                        int[] flashModeValues = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES);
+//                        int[] flashModeValues = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES);
 //                        Log.d(TAG, "flash " + Arrays.toString(flashModeValues));
                         details.put("name", cameraName);
                         @SuppressWarnings("ConstantConditions")
@@ -193,6 +256,12 @@ public class CameraPlugin implements MethodCallHandler {
                 break;
             }
             case "startImageStream": {
+                // Register sensor light callback when on image stream to keep reverse state before
+                if (autoFlashLight) {
+                    mSensorManager.registerListener(sensorLightListener, mLightSensor, SensorManager.SENSOR_DELAY_UI);
+                }
+
+                // Start image stream
                 try {
                     camera.startPreviewWithImageStream();
                     result.success(null);
@@ -202,6 +271,12 @@ public class CameraPlugin implements MethodCallHandler {
                 break;
             }
             case "stopImageStream": {
+                // Remove sensor light callback when off image stream
+                if (autoFlashLight) {
+                    mSensorManager.unregisterListener(sensorLightListener);
+                }
+
+                // Stop image stream
                 try {
                     camera.startPreview();
                     result.success(null);
@@ -232,7 +307,13 @@ public class CameraPlugin implements MethodCallHandler {
                 result.success(true);
                 break;
             }
+            case "setTorchAuto": {
+                registerSensorLight();
+                result.success(true);
+                break;
+            }
             case "setTorchEnable": {
+                unregisterSensorLight();
                 boolean turnOn =  (boolean) call.arguments;
                 try {
                     if (camera != null) {
@@ -880,6 +961,7 @@ public class CameraPlugin implements MethodCallHandler {
                                  }
 //                                 // add flash auto for test, need to more research for auto flash more. Currently, it's work only on capture request
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+//                                captureRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER, CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START);
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
