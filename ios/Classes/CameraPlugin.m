@@ -187,7 +187,7 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     
     _captureDevice = [AVCaptureDevice deviceWithUniqueID:cameraName];
     [_captureDevice lockForConfiguration:nil];
-    [_captureDevice setTorchMode:AVCaptureTorchModeAuto];
+//    [_captureDevice setTorchMode:AVCaptureTorchModeAuto];
     _captureDevice.activeVideoMinFrameDuration = CMTimeMake(1, 20);
     _captureDevice.activeVideoMaxFrameDuration = CMTimeMake(1, 25);
     [_captureDevice unlockForConfiguration];
