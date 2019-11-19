@@ -2,6 +2,7 @@
 
 @protocol FLTCamDelegate <NSObject>
 -(void)cameraTorchDidChange:(BOOL)isActivate;
+-(void)brightnessDidChange:(int)brightnessLevel;
 @end
 
 @interface CameraPlugin : NSObject <FlutterPlugin, FLTCamDelegate>

@@ -148,6 +148,7 @@ FlutterStreamHandler>
 @property (assign) int frameSkipped;
 // Only send torch state one time after start camera
 @property (assign) BOOL lastTorchModeState;
+@property (assign) int lastBrightnessLevel;
 
 - (instancetype)initWithCameraName:(NSString *)cameraName
                   resolutionPreset:(NSString *)resolutionPreset
@@ -170,6 +171,7 @@ FlutterStreamHandler>
 }
 
 @synthesize frameSkipped, lastTorchModeState;
+@synthesize lastBrightnessLevel;
 // Format used for video and image streaming.
 FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 
@@ -181,6 +183,7 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     self = [super init];
     NSAssert(self, @"super init cannot be nil");
     lastTorchModeState = NO;
+    lastBrightnessLevel = 0;
     _enableAudio = enableAudio;
     _dispatchQueue = dispatchQueue;
     _captureSession = [[AVCaptureSession alloc] init];
@@ -353,6 +356,29 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
             CVPixelBufferRef pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
             CVPixelBufferLockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
             
+            // Extract brightness from metadata without flash
+            if (_captureDevice.isTorchActive == NO) {
+                CFDictionaryRef metadataDict = CMCopyDictionaryOfAttachments(NULL, sampleBuffer, kCMAttachmentMode_ShouldPropagate);
+                NSDictionary *metadata = [[NSMutableDictionary alloc] initWithDictionary:(__bridge NSDictionary*)metadataDict];
+                CFRelease(metadataDict);
+                NSDictionary *exifMetadata = [[metadata objectForKey:(NSString *)kCGImagePropertyExifDictionary] mutableCopy];
+                double brightnessValue = [[exifMetadata objectForKey:(NSString *)kCGImagePropertyExifBrightnessValue] doubleValue];
+                // Brightness level without Flash
+                // < 0      => Low
+                // 0 -> 4   => Normal
+                // > 4      => High
+                int newBrightnessLevel = 0;
+                if (brightnessValue < 0) {
+                    newBrightnessLevel = -1;
+                } else if (brightnessValue > 4) {
+                    newBrightnessLevel = 1;
+                }
+                
+                if (newBrightnessLevel != lastBrightnessLevel) {
+                    lastBrightnessLevel = newBrightnessLevel;
+                    [_delegate brightnessDidChange:newBrightnessLevel];
+                }
+            }
             size_t imageWidth = CVPixelBufferGetWidth(pixelBuffer);
             size_t imageHeight = CVPixelBufferGetHeight(pixelBuffer);
             
@@ -855,6 +881,9 @@ CameraPlugin *currentCameraPluginInstance = nil;
 
 -(void)cameraTorchDidChange:(BOOL)isActivate{
     [self.channel invokeMethod:@"camera.torchMode" arguments:[NSNumber numberWithBool:isActivate]];
+}
+-(void)brightnessDidChange:(int)brightnessLevel {
+    [self.channel invokeMethod:@"camera.brightnessLevel" arguments:[NSNumber numberWithInt:brightnessLevel]];
 }
 
 @end

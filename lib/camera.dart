@@ -16,6 +16,8 @@ final MethodChannel _channel = const MethodChannel('plugins.flutter.io/camera');
 
 enum CameraLensDirection { front, back, external }
 
+enum BrightnessLevel { low, normal, high }
+
 enum ResolutionPreset { low, medium, high }
 
 typedef onLatestImageAvailable = Function(CameraImage image);
@@ -23,10 +25,15 @@ typedef onLatestImageAvailable = Function(CameraImage image);
 final _cameraStableBehavior = BehaviorSubject<bool>();
 final _cameraTorchModeBehavior = BehaviorSubject<bool>();
 
+final _cameraBrightnessLevelBehavior = BehaviorSubject<BrightnessLevel>();
+
 Function(bool) get addCameraStable => _cameraStableBehavior.sink.add;
 Stream<bool> get cameraStableEvent => _cameraStableBehavior.stream;
 // Listen torchActive from native
 Stream<bool> get cameraTorchEvent => _cameraTorchModeBehavior.stream;
+
+// Extract brightness level from native
+Stream<BrightnessLevel> get cameraBrightnessLevel => _cameraBrightnessLevelBehavior.stream;
 
 Future<Null> initCamera() async {
   _channel.setMethodCallHandler(_platformCallHandler);
@@ -41,6 +48,21 @@ Future _platformCallHandler(MethodCall call) async {
       bool isEnable = call.arguments as bool;
       print('auto torch mode from native: $isEnable');
       _cameraTorchModeBehavior.sink.add(isEnable);
+      break;
+    // Native value representation
+    // -1 : Low
+    //  0 : Normal
+    //  1 : High
+    case "camera.brightnessLevel":
+      int level = call.arguments as int;
+      BrightnessLevel receivedLevel = BrightnessLevel.normal;
+      if (level < 0) {
+        receivedLevel = BrightnessLevel.low;
+      } else if (level > 0) {
+        receivedLevel = BrightnessLevel.high;
+      }
+      print('Brightness level changed to: $receivedLevel');
+      _cameraBrightnessLevelBehavior.sink.add(receivedLevel);
       break;
     default:
       print('Unknowm method ${call.method} ');
