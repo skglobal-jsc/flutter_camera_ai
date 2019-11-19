@@ -131,37 +131,41 @@ public class CameraPlugin implements MethodCallHandler {
         channel.setMethodCallHandler(new CameraPlugin(registrar, registrar.view()));
     }
 
-    final static double LIGHT_THROTTLE = 20.0;
-    final static int LIGHT_THROTTLE_TIMES = 3;
-    private int currentThrottleTimes = 0;
+//    final static double LIGHT_THROTTLE = 20.0;
+//    final static int LIGHT_THROTTLE_TIMES = 3;
+//    private int currentThrottleTimes = 0;
     private boolean autoFlashLight = false;
 
     // Implement a sensorLightListener to receive updates
     SensorEventListener sensorLightListener = new SensorEventListener() {
         @Override
         public void onSensorChanged(SensorEvent event) {
-            Log.d(TAG, "Light " + event.values[0]);
+//            Log.d(TAG, "Light " + event.values[0]);
+            double b = event.values[0];
+            int r = b < 20 ? -1 : (b > 200 ? 1 : 0);
+            channel.invokeMethod("camera.brightnessLevel", r);
 
-            if (autoFlashLight) {
-                int sw = 0;
-                currentThrottleTimes += (event.values[0] > LIGHT_THROTTLE) ? 1 : -1;
-                if (currentThrottleTimes > LIGHT_THROTTLE_TIMES) {
-                    // turn on light
-                    sw = 1;
-                } else if (currentThrottleTimes < -1 * LIGHT_THROTTLE_TIMES) {
-                    // turn off light
-                    sw = -1;
-                }
-
-                if (sw != 0) {
-                    Log.d(TAG, "L " + sw);
-                    boolean turnOn = sw < 0;
-                    currentThrottleTimes = 0;
-                    if (camera != null && isFlashOn != turnOn) {
-                        camera.turnFlashLight(turnOn);
-                    }
-                }
-            }
+            // Auto check flash
+//            if (autoFlashLight) {
+//                int sw = 0;
+//                currentThrottleTimes += (event.values[0] > LIGHT_THROTTLE) ? 1 : -1;
+//                if (currentThrottleTimes > LIGHT_THROTTLE_TIMES) {
+//                    // turn on light
+//                    sw = 1;
+//                } else if (currentThrottleTimes < -1 * LIGHT_THROTTLE_TIMES) {
+//                    // turn off light
+//                    sw = -1;
+//                }
+//
+//                if (sw != 0) {
+//                    Log.d(TAG, "L " + sw);
+//                    boolean turnOn = sw < 0;
+//                    currentThrottleTimes = 0;
+//                    if (camera != null && isFlashOn != turnOn) {
+//                        camera.turnFlashLight(turnOn);
+//                    }
+//                }
+//            }
         }
 
         @Override
@@ -307,13 +311,13 @@ public class CameraPlugin implements MethodCallHandler {
                 result.success(true);
                 break;
             }
-            case "setTorchAuto": {
-                registerSensorLight();
-                result.success(true);
-                break;
-            }
+//            case "setTorchAuto": {
+//                registerSensorLight();
+//                result.success(true);
+//                break;
+//            }
             case "setTorchEnable": {
-                unregisterSensorLight();
+//                unregisterSensorLight();
                 boolean turnOn =  (boolean) call.arguments;
                 try {
                     if (camera != null) {

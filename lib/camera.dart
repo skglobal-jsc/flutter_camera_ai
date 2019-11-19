@@ -328,9 +328,9 @@ class CameraController extends ValueNotifier<CameraValue> {
     return _channel.invokeMethod<void>('setTorchEnable', enable);
   }
 
-  Future setTourchAuto() async {
-    return _channel.invokeMethod<void>('setTorchAuto');
-  }
+//  Future setTourchAuto() async {
+//    return _channel.invokeMethod<void>('setTorchAuto');
+//  }
   
   /// Prepare the capture session for video recording.
   ///
