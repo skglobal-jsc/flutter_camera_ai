@@ -116,6 +116,7 @@ public class CameraPlugin implements MethodCallHandler {
 
         // Register light sensor
         registerLightSensor(registrar.activity());
+        registerSensorLight();
     }
 
     public static void registerWith(Registrar registrar) {
@@ -144,7 +145,6 @@ public class CameraPlugin implements MethodCallHandler {
             double b = event.values[0];
             int r = b < 20 ? -1 : (b > 200 ? 1 : 0);
             channel.invokeMethod("camera.brightnessLevel", r);
-
             // Auto check flash
 //            if (autoFlashLight) {
 //                int sw = 0;
