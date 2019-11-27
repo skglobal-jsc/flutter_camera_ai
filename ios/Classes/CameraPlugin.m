@@ -98,7 +98,7 @@ previewPhotoSampleBuffer:(CMSampleBufferRef)previewPhotoSampleBuffer
     float yxAtan = (atan2(_motionManager.accelerometerData.acceleration.y,
                           _motionManager.accelerometerData.acceleration.x)) *
     180 / M_PI;
-    if (isNearValue(-90.0, yxAtan)) {
+    if (isNearValue(-90.0, yxAtan) || (yxAtan > 45 && yxAtan < 90)) {
         return UIImageOrientationRight;
     } else if (isNearValueABS(180.0, yxAtan)) {
         return _cameraPosition == AVCaptureDevicePositionBack ? UIImageOrientationUp

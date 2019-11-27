@@ -1242,7 +1242,12 @@ public class CameraPlugin implements MethodCallHandler {
                     (currentOrientation == ORIENTATION_UNKNOWN)
                             ? 0
                             : (isFrontFacing) ? -currentOrientation : currentOrientation;
-            return (sensorOrientationOffset + sensorOrientation + 360) % 360;
+            final int finalOrientation = (sensorOrientationOffset + sensorOrientation + 360) % 360;
+            // TODO: - Review it
+            if (finalOrientation >= 225 && finalOrientation <= 270) {
+                return 90; // Right
+            }
+            return finalOrientation;
         }
     }
 
