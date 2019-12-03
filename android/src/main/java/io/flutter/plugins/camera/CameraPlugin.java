@@ -1116,21 +1116,20 @@ public class CameraPlugin implements MethodCallHandler {
             byte[] imageBytes = outputStream.toByteArray();
             int YCord = imgW * (imgH / 2);
             int Y = (imageBytes[YCord] & 0xff);
-            int r = 0;
-//            printLog("brightness: " + Y);
-            if (Y < 20) {
-                r = -1;
-//                printLog("brightness: low");
-            }
-            if (Y >= 20 && Y < 239) {
-                r = 0;
-//                printLog("brightness: normal");
-            }
-            if (Y >= 239) {
-                r = 1;
-//                printLog("brightness: too bright");
-            }
+            int r = Y < 20 ? -1 : (Y >= 239 ? 1 : 0);
             channel.invokeMethod("camera.brightnessLevel", r);
+//            printLog("brightness: " + Y);
+//            if (Y < 20) {
+//                r = -1;
+////                printLog("brightness: low");
+//            }
+//            if (Y >= 20 && Y < 239) {
+////                printLog("brightness: normal");
+//            }
+//            if (Y >= 239) {
+//                r = 1;
+////                printLog("brightness: too bright");
+//            }
 
         }
         ByteBuffer bufferClone(ByteBuffer original) {
