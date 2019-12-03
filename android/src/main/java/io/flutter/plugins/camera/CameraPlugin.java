@@ -32,6 +32,8 @@ import android.util.Size;
 import android.view.Display;
 import android.view.OrientationEventListener;
 import android.view.Surface;
+import android.os.Handler;
+import android.os.HandlerThread;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -50,6 +52,7 @@ import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.view.FlutterView;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -91,6 +94,8 @@ public class CameraPlugin implements MethodCallHandler {
     // Detect flash by light sensor
     private SensorManager mSensorManager;
     private Sensor mLightSensor;
+    private HandlerThread backgroundThread;
+    private Handler backgroundHandler;
 
 
     private CameraPlugin(Registrar registrar, FlutterView view) {
@@ -132,7 +137,7 @@ public class CameraPlugin implements MethodCallHandler {
         channel.setMethodCallHandler(new CameraPlugin(registrar, registrar.view()));
     }
 
-//    final static double LIGHT_THROTTLE = 20.0;
+    //    final static double LIGHT_THROTTLE = 20.0;
 //    final static int LIGHT_THROTTLE_TIMES = 3;
 //    private int currentThrottleTimes = 0;
     private boolean autoFlashLight = false;
@@ -143,8 +148,7 @@ public class CameraPlugin implements MethodCallHandler {
         public void onSensorChanged(SensorEvent event) {
 //            Log.d(TAG, "Light " + event.values[0]);
             double b = event.values[0];
-            int r = b < 20 ? -1 : (b > 200 ? 1 : 0);
-            channel.invokeMethod("camera.brightnessLevel", r);
+
             // Auto check flash
 //            if (autoFlashLight) {
 //                int sw = 0;
@@ -447,6 +451,7 @@ public class CameraPlugin implements MethodCallHandler {
                                             "cameraPermission", "MediaRecorderAudio permission not granted", null);
                                     return;
                                 }
+                                startBackgroundThread();
                                 open(result);
                             }
                         };
@@ -618,6 +623,7 @@ public class CameraPlugin implements MethodCallHandler {
                             new CameraDevice.StateCallback() {
                                 @Override
                                 public void onOpened(@NonNull CameraDevice cameraDevice) {
+//                                    mCameraOpenCloseLock.release();
                                     Camera.this.cameraDevice = cameraDevice;
 
                                     try {
@@ -651,6 +657,7 @@ public class CameraPlugin implements MethodCallHandler {
 
                                 @Override
                                 public void onDisconnected(@NonNull CameraDevice cameraDevice) {
+//                                    mCameraOpenCloseLock.release();
                                     cameraDevice.close();
                                     Camera.this.cameraDevice = null;
                                     sendErrorEvent("The camera was disconnected.");
@@ -658,6 +665,7 @@ public class CameraPlugin implements MethodCallHandler {
 
                                 @Override
                                 public void onError(@NonNull CameraDevice cameraDevice, int errorCode) {
+//                                    mCameraOpenCloseLock.release();
                                     cameraDevice.close();
                                     Camera.this.cameraDevice = null;
                                     String errorDescription;
@@ -690,7 +698,44 @@ public class CameraPlugin implements MethodCallHandler {
                 }
             }
         }
-
+        public void startBackgroundThread() {
+            backgroundThread = new HandlerThread("Camera Capture Thread");
+            backgroundThread.start();
+            backgroundHandler = new Handler(backgroundThread.getLooper());
+        }
+        public void stopBackgroundThread() {
+            if (backgroundHandler != null) {
+                backgroundThread.quitSafely();
+                try {
+                    backgroundThread.join();
+                    backgroundThread = null;
+                    backgroundHandler = null;
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        //        private void closeCamera() {
+//            try {
+//                mCameraOpenCloseLock.acquire();
+//                if (null != mCaptureSession) {
+//                    mCaptureSession.close();
+//                    mCaptureSession = null;
+//                }
+//                if (null != mCameraDevice) {
+//                    mCameraDevice.close();
+//                    mCameraDevice = null;
+//                }
+//                if (null != mImageReader) {
+//                    mImageReader.close();
+//                    mImageReader = null;
+//                }
+//            } catch (InterruptedException e) {
+//                throw new RuntimeException("Interrupted while trying to lock camera closing.", e);
+//            } finally {
+//                mCameraOpenCloseLock.release();
+//            }
+//        }
         private void writeToFile(ByteBuffer buffer, File file) throws IOException {
             try (FileOutputStream outputStream = new FileOutputStream(file)) {
                 while (0 < buffer.remaining()) {
@@ -701,7 +746,6 @@ public class CameraPlugin implements MethodCallHandler {
 
         private void takePicture(String filePath, @NonNull final Result result) {
             final File file = new File(filePath);
-
             if (file.exists()) {
                 result.error(
                         "fileExists",
@@ -718,6 +762,7 @@ public class CameraPlugin implements MethodCallHandler {
                                 ByteBuffer buffer = image.getPlanes()[0].getBuffer();
                                 writeToFile(buffer, file);
                                 result.success(null);
+
                             } catch (IOException e) {
                                 result.error("IOError", "Failed saving image", null);
                             }
@@ -820,7 +865,7 @@ public class CameraPlugin implements MethodCallHandler {
                                 result.error("configureFailed", "Failed to configure camera session", null);
                             }
                         },
-                        null);
+                        backgroundHandler);
             } catch (CameraAccessException | IOException e) {
                 result.error("videoRecordingFailed", e.getMessage(), null);
             }
@@ -882,12 +927,12 @@ public class CameraPlugin implements MethodCallHandler {
                             }
                             try {
                                 cameraCaptureSession = session;
-                                 if(android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
-                                     captureRequestBuilder.set(
-                                             CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
-                                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
-                                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
-                                 }
+                                if(android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+                                    captureRequestBuilder.set(
+                                            CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+                                }
                                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
@@ -960,9 +1005,9 @@ public class CameraPlugin implements MethodCallHandler {
                             }
                             try {
                                 cameraCaptureSession = session;
-                                 if(android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
-                                     captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
-                                 }
+                                if(android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+                                    captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+                                }
 //                                 // add flash auto for test, need to more research for auto flash more. Currently, it's work only on capture request
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER, CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START);
@@ -1010,53 +1055,84 @@ public class CameraPlugin implements MethodCallHandler {
                         }
                     });
         }
-
         private void setImageStreamImageAvailableListener(final EventChannel.EventSink eventSink) {
             imageStreamReader.setOnImageAvailableListener(
                     new ImageReader.OnImageAvailableListener() {
                         @Override
                         public void onImageAvailable(final ImageReader reader) {
                             Image image = reader.acquireLatestImage();
-                            if (image == null) return;
+                            try {
+                                if (image == null) return;
+                                getBrightnessFromYUVImage(image, image.getWidth(), image.getHeight());
+                                List<Map<String, Object>> planes = new ArrayList<>();
+                                ByteBuffer buffers[] = new ByteBuffer[image.getPlanes().length];
+                                int i = 0;
+                                for (Image.Plane plane : image.getPlanes()) {
+                                    ByteBuffer buffer = plane.getBuffer();
+                                    buffers[i++] = bufferClone(buffer);
 
-                            List<Map<String, Object>> planes = new ArrayList<>();
-                            ByteBuffer buffers[] = new ByteBuffer[image.getPlanes().length];
-                            int i = 0;
-                            for (Image.Plane plane : image.getPlanes()) {
-                                ByteBuffer buffer = plane.getBuffer();
-                                buffers[i++] = bufferClone(buffer);
+                                    byte[] bytes = new byte[buffer.remaining()];
+                                    buffer.get(bytes, 0, bytes.length);
 
-                                byte[] bytes = new byte[buffer.remaining()];
-                                buffer.get(bytes, 0, bytes.length);
+                                    Map<String, Object> planeBuffer = new HashMap<>();
+                                    planeBuffer.put("bytesPerRow", plane.getRowStride());
+                                    planeBuffer.put("bytesPerPixel", plane.getPixelStride());
+                                    planeBuffer.put("bytes", bytes);
 
-                                Map<String, Object> planeBuffer = new HashMap<>();
-                                planeBuffer.put("bytesPerRow", plane.getRowStride());
-                                planeBuffer.put("bytesPerPixel", plane.getPixelStride());
-                                planeBuffer.put("bytes", bytes);
+                                    planes.add(planeBuffer);
+                                }
 
-                                planes.add(planeBuffer);
-                            }
+                                Map<String, Object> imageBuffer = new HashMap<>();
+                                imageBuffer.put("width", image.getWidth());
+                                imageBuffer.put("height", image.getHeight());
+                                imageBuffer.put("format", image.getFormat());
+                                imageBuffer.put("planes", planes);
 
-                            Map<String, Object> imageBuffer = new HashMap<>();
-                            imageBuffer.put("width", image.getWidth());
-                            imageBuffer.put("height", image.getHeight());
-                            imageBuffer.put("format", image.getFormat());
-                            imageBuffer.put("planes", planes);
-
-                            eventSink.success(imageBuffer);
+                                eventSink.success(imageBuffer);
 
 //                            // read stable status use native-lib of Giang san
-                            if (isFrameMode) {
-                                handleStableStateFrameByFrame(image.getWidth(), image.getHeight(), buffers);
-                            }
+                                if (isFrameMode) {
+                                    handleStableStateFrameByFrame(image.getWidth(), image.getHeight(), buffers);
+                                }
 
-                            // force close img object
-                            image.close();
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            } finally {
+                                if (image != null) {
+                                    image.close();
+                                }
+                            }
                         }
                     },
                     null);
         }
 
+        private void getBrightnessFromYUVImage(Image image, int imgW, int imgH) throws IOException {
+            ByteBuffer bufferY = image.getPlanes()[0].getBuffer();
+            byte[] yByte = new byte[bufferY.remaining()];
+            bufferY.get(yByte);
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            outputStream.write(yByte);
+            byte[] imageBytes = outputStream.toByteArray();
+            int YCord = imgW * (imgH / 2);
+            int Y = (imageBytes[YCord] & 0xff);
+            int r = 0;
+//            printLog("brightness: " + Y);
+            if (Y < 10) {
+                r = -1;
+//                printLog("brightness: low");
+            }
+            if (Y >= 10 && Y < 239) {
+                r = 0;
+//                printLog("brightness: normal");
+            }
+            if (Y >= 239) {
+                r = 1;
+//                printLog("brightness: too bright");
+            }
+            channel.invokeMethod("camera.brightnessLevel", r);
+
+        }
         ByteBuffer bufferClone(ByteBuffer original) {
             ByteBuffer clone = ByteBuffer.allocate(original.capacity());
             original.rewind();//copy from the beginning
@@ -1211,6 +1287,7 @@ public class CameraPlugin implements MethodCallHandler {
         }
 
         private void close() {
+            stopBackgroundThread();
             closeCaptureSession();
 
             if (cameraDevice != null) {
