@@ -1118,11 +1118,11 @@ public class CameraPlugin implements MethodCallHandler {
             int Y = (imageBytes[YCord] & 0xff);
             int r = 0;
 //            printLog("brightness: " + Y);
-            if (Y < 10) {
+            if (Y < 20) {
                 r = -1;
 //                printLog("brightness: low");
             }
-            if (Y >= 10 && Y < 239) {
+            if (Y >= 20 && Y < 239) {
                 r = 0;
 //                printLog("brightness: normal");
             }
