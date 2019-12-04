@@ -39,6 +39,7 @@ import androidx.annotation.Nullable;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
 import io.flutter.plugin.common.EventChannel;
@@ -611,7 +612,7 @@ public class CameraPlugin implements MethodCallHandler {
                     // Used to steam image byte data to dart side.
                     imageStreamReader =
                             ImageReader.newInstance(
-                                    previewSize.getWidth(), previewSize.getHeight(), ImageFormat.YUV_420_888, 2);
+                                    previewSize.getWidth(), previewSize.getHeight(), ImageFormat.JPEG, 2);
 
                     cameraManager.openCamera(
                             cameraName,
