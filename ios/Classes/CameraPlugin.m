@@ -820,36 +820,37 @@ CameraPlugin *currentCameraPluginInstance = nil;
         [_camera stopImageStream];
         result(nil);
     } else if ([@"setFrameModeEnable" isEqualToString:call.method]) {
-        __weak CameraPlugin *strongSelf = self;
-        int64_t lastTxId = _camera.textureId;
-        if (call.arguments != NULL) {
-            __weak FLTCam *strongCam = _camera;
-            __weak CameraPlugin *strongSelf = self;
-            _camera.onFrameAvailable = ^{
-                CVPixelBufferRef pixelBuffer = CVPixelBufferRetain(strongCam.latestPixelBuffer);
-                if (pixelBuffer != NULL) {
-                    CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixelBuffer];
-                    
-                    CIContext *temporaryContext = [CIContext contextWithOptions:nil];
-                    CGImageRef videoImage = [temporaryContext
-                                             createCGImage:ciImage
-                                             fromRect:CGRectMake(0, 0,
-                                                                 CVPixelBufferGetWidth(pixelBuffer),
-                                                                 CVPixelBufferGetHeight(pixelBuffer))];
-                    
-                    UIImage *uiImage = [UIImage imageWithCGImage:videoImage];
-                    CGImageRelease(videoImage);
-                    CVPixelBufferRelease(pixelBuffer);
-                    BOOL stableValue = strongSelf.isStable(uiImage);
-                    [strongSelf.channel invokeMethod:@"camera.stableDetected" arguments:[NSNumber numberWithBool:stableValue]];
-                }
-                [strongSelf.registry textureFrameAvailable:lastTxId];
-            };
-        } else {
-            _camera.onFrameAvailable = ^{
-                [strongSelf.registry textureFrameAvailable:lastTxId];
-            };
-        }
+        result(nil);
+//        __weak CameraPlugin *strongSelf = self;
+//        int64_t lastTxId = _camera.textureId;
+//        if (call.arguments != NULL) {
+//            __weak FLTCam *strongCam = _camera;
+//            __weak CameraPlugin *strongSelf = self;
+//            _camera.onFrameAvailable = ^{
+//                CVPixelBufferRef pixelBuffer = CVPixelBufferRetain(strongCam.latestPixelBuffer);
+//                if (pixelBuffer != NULL) {
+//                    CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixelBuffer];
+//
+//                    CIContext *temporaryContext = [CIContext contextWithOptions:nil];
+//                    CGImageRef videoImage = [temporaryContext
+//                                             createCGImage:ciImage
+//                                             fromRect:CGRectMake(0, 0,
+//                                                                 CVPixelBufferGetWidth(pixelBuffer),
+//                                                                 CVPixelBufferGetHeight(pixelBuffer))];
+//
+//                    UIImage *uiImage = [UIImage imageWithCGImage:videoImage];
+//                    CGImageRelease(videoImage);
+//                    CVPixelBufferRelease(pixelBuffer);
+//                    BOOL stableValue = strongSelf.isStable(uiImage);
+//                    [strongSelf.channel invokeMethod:@"camera.stableDetected" arguments:[NSNumber numberWithBool:stableValue]];
+//                }
+//                [strongSelf.registry textureFrameAvailable:lastTxId];
+//            };
+//        } else {
+//            _camera.onFrameAvailable = ^{
+//                [strongSelf.registry textureFrameAvailable:lastTxId];
+//            };
+//        }
     } else if ([@"setTorchEnable" isEqualToString:call.method]) {
         BOOL isEnable = [(NSNumber*)call.arguments boolValue];
         NSLog(@"setTorchEnable: %d", isEnable);
