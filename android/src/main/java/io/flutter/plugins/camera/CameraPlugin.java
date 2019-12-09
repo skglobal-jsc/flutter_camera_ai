@@ -29,6 +29,7 @@ import android.media.MediaRecorder;
 import android.os.Build;
 import android.util.Log;
 import android.util.Size;
+import android.util.SparseIntArray;
 import android.view.Display;
 import android.view.OrientationEventListener;
 import android.view.Surface;
@@ -80,8 +81,10 @@ public class CameraPlugin implements MethodCallHandler {
     private static MethodChannel channel;
     private static CameraManager cameraManager;
     private final FlutterView view;
+    private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
     private Camera camera;
     private Registrar registrar;
+    private Activity activity;
     // The code to run after requesting camera permissions.
     private Runnable cameraPermissionContinuation;
     private final OrientationEventListener orientationEventListener;
@@ -93,11 +96,21 @@ public class CameraPlugin implements MethodCallHandler {
     private SensorManager mSensorManager;
     private Sensor mLightSensor;
 
+    // Keep current rotation of device
+    private int startRotation = 0;
+
+    static {
+        ORIENTATIONS.append(Surface.ROTATION_0, 0);
+        ORIENTATIONS.append(Surface.ROTATION_90, 90);
+        ORIENTATIONS.append(Surface.ROTATION_180, 180);
+        ORIENTATIONS.append(Surface.ROTATION_270, 270);
+    }
 
     private CameraPlugin(Registrar registrar, FlutterView view) {
         MovingDetectorJNI.newInstance();
         this.registrar = registrar;
         this.view = view;
+        this.activity = registrar.activity();
 
         Log.d("IS_HUAWEI_BRAND:", Build.MANUFACTURER + "");
 
@@ -109,7 +122,13 @@ public class CameraPlugin implements MethodCallHandler {
                             return;
                         }
                         // Convert the raw deg angle to the nearest multiple of 90.
-                        currentOrientation = (int) Math.round(i / 90.0) * 90;
+                        int currentOrientation = ((int) Math.round(i / 90.0) * 90) % 360;
+                        if (startRotation != currentOrientation) {
+                            startRotation = currentOrientation;
+                            if (camera != null && camera.captureRequestBuilder != null) {
+                                camera.updateRotation();
+                            }
+                        }
                     }
                 };
 
@@ -332,6 +351,14 @@ public class CameraPlugin implements MethodCallHandler {
                 }
                 break;
             }
+
+            // For debugs only
+//            case "setStartRotation": {
+//                int rotate = (int) call.arguments;
+//                startRotation = rotate;
+//                result.success(true);
+//                break;
+//            }
             default:
                 result.notImplemented();
                 break;
@@ -730,7 +757,10 @@ public class CameraPlugin implements MethodCallHandler {
                 final CaptureRequest.Builder captureBuilder =
                         cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
                 captureBuilder.addTarget(pictureImageReader.getSurface());
-                captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getMediaOrientation());
+//                captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getMediaOrientation());
+                int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+                if (isFrontFacing) rotation = -rotation;
+                captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
 
                 cameraCaptureSession.capture(
                         captureBuilder.build(),
@@ -918,6 +948,19 @@ public class CameraPlugin implements MethodCallHandler {
             }
         }
 
+        private void updateRotation() {
+            try {
+                cameraCaptureSession.stopRepeating();
+                // Orientation
+                int r = activity.getWindowManager().getDefaultDisplay().getRotation();
+                if (isFrontFacing) r = -r;
+                captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(r));
+                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
         private void startPreviewWithImageStream() throws CameraAccessException {
             closeCaptureSession();
 
@@ -927,9 +970,12 @@ public class CameraPlugin implements MethodCallHandler {
             captureRequestBuilder =
                     cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
 
+            // Orientation
+            int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+            if (isFrontFacing) rotation = -rotation;
+            captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
+
             List<Surface> surfaces = new ArrayList<>();
-
-
 
             previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
@@ -1249,6 +1295,24 @@ public class CameraPlugin implements MethodCallHandler {
                 return 90; // Right
             }
             return finalOrientation;
+        }
+
+        /**
+         * Retrieves the JPEG orientation from the specified screen rotation.
+         *
+         * @param rotation The screen rotation.
+         * @return The JPEG orientation (one of 0, 90, 270, and 360)
+         */
+        private int getOrientation(int rotation) {
+            // Sensor orientation is 90 for most devices, or 270 for some devices (eg. Nexus 5X)
+            // We have to take that into account and rotate JPEG properly.
+            // For devices with orientation of 90, we simply return our mapping from ORIENTATIONS.
+            // For devices with orientation of 270, we need to rotate the JPEG 180 degrees.
+//            printLog("Rotation " + rotation);
+//            printLog("ORIENTATIONs " + ORIENTATIONS.get(rotation));
+//            printLog("sensor Orientation " + sensorOrientation);
+//            printLog("Change stat rotate " + startRotation + " -> " + ((ORIENTATIONS.get(rotation) + sensorOrientation + startRotation) % 360));
+            return (ORIENTATIONS.get(rotation) + sensorOrientation + startRotation) % 360;
         }
     }
 

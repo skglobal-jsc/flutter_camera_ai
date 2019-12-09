@@ -554,6 +554,11 @@ class CameraController extends ValueNotifier<CameraValue> {
       throw CameraException(e.code, e.message);
     }
   }
+  
+  // For debugs only
+//  Future setStartRotation(int rotate) {
+//    return _channel.invokeMethod('setStartRotation', rotate);
+//  }
 
   /// Releases the resources of this camera.
   @override
