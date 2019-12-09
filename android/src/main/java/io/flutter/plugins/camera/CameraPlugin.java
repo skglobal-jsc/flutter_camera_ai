@@ -27,6 +27,7 @@ import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
 import android.os.Build;
+import android.os.Environment;
 import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
@@ -40,6 +41,7 @@ import androidx.annotation.Nullable;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.Scalar;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
@@ -56,10 +58,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -152,7 +156,7 @@ public class CameraPlugin implements MethodCallHandler {
         channel.setMethodCallHandler(new CameraPlugin(registrar, registrar.view()));
     }
 
-//    final static double LIGHT_THROTTLE = 20.0;
+    //    final static double LIGHT_THROTTLE = 20.0;
 //    final static int LIGHT_THROTTLE_TIMES = 3;
 //    private int currentThrottleTimes = 0;
     private boolean autoFlashLight = false;
@@ -162,9 +166,9 @@ public class CameraPlugin implements MethodCallHandler {
         @Override
         public void onSensorChanged(SensorEvent event) {
 //            Log.d(TAG, "Light " + event.values[0]);
-            double b = event.values[0];
-            int r = b < 20 ? -1 : (b > 200 ? 1 : 0);
-            channel.invokeMethod("camera.brightnessLevel", r);
+//            double b = event.values[0];
+//            int r = b < 20 ? -1 : (b > 200 ? 1 : 0);
+//            channel.invokeMethod("camera.brightnessLevel", r);
             // Auto check flash
 //            if (autoFlashLight) {
 //                int sw = 0;
@@ -338,7 +342,7 @@ public class CameraPlugin implements MethodCallHandler {
 //            }
             case "setTorchEnable": {
 //                unregisterSensorLight();
-                boolean turnOn =  (boolean) call.arguments;
+                boolean turnOn = (boolean) call.arguments;
                 try {
                     if (camera != null) {
                         camera.turnFlashLight(turnOn);
@@ -426,9 +430,7 @@ public class CameraPlugin implements MethodCallHandler {
 
             this.cameraName = cameraName;
             textureEntry = view.createSurfaceTexture();
-
             registerEventChannel();
-
             try {
                 int minHeight;
                 switch (resolutionPreset) {
@@ -456,7 +458,6 @@ public class CameraPlugin implements MethodCallHandler {
                                 == CameraMetadata.LENS_FACING_FRONT;
                 computeBestCaptureSize(streamConfigurationMap);
                 computeBestPreviewAndRecordingSize(streamConfigurationMap, minHeight, captureSize);
-
                 if (cameraPermissionContinuation != null) {
                     result.error("cameraPermission", "Camera permission request ongoing", null);
                 }
@@ -540,8 +541,7 @@ public class CameraPlugin implements MethodCallHandler {
                     == PackageManager.PERMISSION_GRANTED;
         }
 
-        private void computeBestPreviewAndRecordingSize(
-                StreamConfigurationMap streamConfigurationMap, int minHeight, Size captureSize) {
+        private void computeBestPreviewAndRecordingSize(StreamConfigurationMap streamConfigurationMap, int minHeight, Size captureSize) {
             Size[] sizes = streamConfigurationMap.getOutputSizes(SurfaceTexture.class);
 
             // Preview size and video size should not be greater than screen resolution or 1080.
@@ -885,11 +885,11 @@ public class CameraPlugin implements MethodCallHandler {
 
             previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
-            if(!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)){
-                if(android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)){
+            if (!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)) {
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
 
-                } else if(android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)){
+                } else if (android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)) {
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
                 } else {
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
@@ -913,12 +913,12 @@ public class CameraPlugin implements MethodCallHandler {
                             }
                             try {
                                 cameraCaptureSession = session;
-                                 if(android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
-                                     captureRequestBuilder.set(
-                                             CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
-                                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
-                                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
-                                 }
+                                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+                                    captureRequestBuilder.set(
+                                            CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+                                }
                                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
@@ -979,11 +979,11 @@ public class CameraPlugin implements MethodCallHandler {
 
             previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
-            if(!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)){
-                if(android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)){
+            if (!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)) {
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
 
-                } else if(android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)){
+                } else if (android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)) {
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
                 } else {
                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
@@ -1007,9 +1007,9 @@ public class CameraPlugin implements MethodCallHandler {
                             }
                             try {
                                 cameraCaptureSession = session;
-                                 if(android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
-                                     captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
-                                 }
+                                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+                                    captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+                                }
 //                                 // add flash auto for test, need to more research for auto flash more. Currently, it's work only on capture request
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
 //                                captureRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER, CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START);
@@ -1065,7 +1065,7 @@ public class CameraPlugin implements MethodCallHandler {
                         public void onImageAvailable(final ImageReader reader) {
                             Image image = reader.acquireLatestImage();
                             if (image == null) return;
-
+                            getBrightnessValue(image);
                             List<Map<String, Object>> planes = new ArrayList<>();
                             ByteBuffer buffers[] = new ByteBuffer[image.getPlanes().length];
                             int i = 0;
@@ -1102,6 +1102,52 @@ public class CameraPlugin implements MethodCallHandler {
                         }
                     },
                     null);
+        }
+
+        private void getBrightnessValue(Image image) {
+            try {
+                ByteBuffer imageBuffer = image.getPlanes()[0].getBuffer();
+                ByteBuffer buffer = ByteBuffer.allocate(imageBuffer.capacity());
+                buffer.put(imageBuffer);
+                buffer.compact();
+
+                Mat inputMat = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8U);
+                inputMat.put(0, 0, buffer.array());
+                /**
+                 * In the case of color images, the decoded images will have the channels stored in B G R order.
+                 */
+                Mat brg = Imgcodecs.imdecode(inputMat, Imgcodecs.CV_LOAD_IMAGE_UNCHANGED);
+                /**
+                 * RGB color -> HSV color
+                 */
+                Mat hsv = new Mat(image.getHeight(), image.getWidth(), CvType.CV_8UC3);
+                List<Mat> hsv_channel = new ArrayList<>();
+                Imgproc.cvtColor(brg, hsv, Imgproc.COLOR_BGR2HSV);
+                /**
+                 * 0: Hue channel
+                 * 1: Saturation channel
+                 * 2: Value/ Brightness channel
+                 */
+                Core.split(hsv, hsv_channel);
+                /**
+                 * Get total of pixel and calculate averageLuminance*/
+                Scalar sumElems = Core.sumElems(hsv_channel.get(2));
+                int averageLuminance = (int) (sumElems.val[0] / (hsv_channel.get(2).rows() * hsv_channel.get(2).cols()));
+//                Log.d("CAM", "average: " + averageLuminance);
+                int r = averageLuminance < 50 ? -1 : (averageLuminance >= 216 ? 1 : 0);
+                channel.invokeMethod("camera.brightnessLevel", r);
+                //            // Save mat to image
+//            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+//            File path = new File(Environment.getExternalStorageDirectory() + "/Images/");
+//            path.mkdirs();
+//            File file = new File(path, "image" + timeStamp + "_orginal.png");
+//            String filename = file.toString();
+//            Imgcodecs.imwrite(filename, rgb);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
         }
 
         ByteBuffer bufferClone(ByteBuffer original) {
@@ -1193,10 +1239,12 @@ public class CameraPlugin implements MethodCallHandler {
 
 
         int counter = 3;
+
         /**
          * Read camera state and detect is stable
-         * @param w of image
-         * @param h of image
+         *
+         * @param w       of image
+         * @param h       of image
          * @param buffers will contents 3 elements, as Y,U,V match to position 0,1,2
          */
         private void handleStableStateFrameByFrame(int w, int h, ByteBuffer[] buffers) {
