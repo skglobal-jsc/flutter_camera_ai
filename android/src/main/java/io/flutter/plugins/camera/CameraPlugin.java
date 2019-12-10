@@ -129,7 +129,7 @@ public class CameraPlugin implements MethodCallHandler {
                         int currentOrientation = ((int) Math.round(i / 90.0) * 90) % 360;
                         if (startRotation != currentOrientation) {
                             startRotation = currentOrientation;
-                            if (camera != null && camera.captureRequestBuilder != null) {
+                            if (camera != null) {
                                 camera.updateRotation();
                             }
                         }
@@ -953,12 +953,14 @@ public class CameraPlugin implements MethodCallHandler {
 
         private void updateRotation() {
             try {
-                cameraCaptureSession.stopRepeating();
-                // Orientation
-                int r = activity.getWindowManager().getDefaultDisplay().getRotation();
-                if (isFrontFacing) r = -r;
-                captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(r));
-                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+                if (cameraCaptureSession != null && captureRequestBuilder != null) {
+                    cameraCaptureSession.stopRepeating();
+                    // Orientation
+                    int r = activity.getWindowManager().getDefaultDisplay().getRotation();
+                    if (isFrontFacing) r = -r;
+                    captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(r));
+                    cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+                }
             } catch (Exception e) {
                 e.printStackTrace();
             }
