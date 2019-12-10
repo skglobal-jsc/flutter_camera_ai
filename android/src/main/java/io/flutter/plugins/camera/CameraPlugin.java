@@ -7,6 +7,8 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
@@ -27,6 +29,7 @@ import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
 import android.os.Build;
+import android.util.Base64;
 import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
@@ -52,6 +55,7 @@ import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.view.FlutterView;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -262,7 +266,7 @@ public class CameraPlugin implements MethodCallHandler {
                 break;
             }
             case "takePicture": {
-                camera.takePicture((String) call.argument("path"), result);
+                camera.takePicture(result);
                 break;
             }
             case "prepareForVideoRecording": {
@@ -727,27 +731,26 @@ public class CameraPlugin implements MethodCallHandler {
             }
         }
 
-        private void takePicture(String filePath, @NonNull final Result result) {
-            final File file = new File(filePath);
-
-            if (file.exists()) {
-                result.error(
-                        "fileExists",
-                        "File at path '" + filePath + "' already exists. Cannot overwrite.",
-                        null);
-                return;
-            }
-
+        private void takePicture(@NonNull final Result result) {
             pictureImageReader.setOnImageAvailableListener(
                     new ImageReader.OnImageAvailableListener() {
                         @Override
                         public void onImageAvailable(ImageReader reader) {
                             try (Image image = reader.acquireLatestImage()) {
                                 ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-                                writeToFile(buffer, file);
-                                result.success(null);
-                            } catch (IOException e) {
-                                result.error("IOError", "Failed saving image", null);
+                                byte jpegBytes[] = new byte[buffer.remaining()];
+                                buffer.get(jpegBytes);
+                                final Bitmap imageBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
+                                final String base64 = getBase64Image(imageBitmap);
+                                printLog(base64);
+
+                                result.success(new HashMap() {{
+                                    put("base64String", base64);
+                                    put("width", image.getWidth());
+                                    put("height", image.getHeight());
+                                }});
+                            } catch (Exception e) {
+                                result.error("IOError", "Convert image to base64 fail", null);
                             }
                         }
                     },
@@ -1313,6 +1316,13 @@ public class CameraPlugin implements MethodCallHandler {
 //            printLog("sensor Orientation " + sensorOrientation);
 //            printLog("Change stat rotate " + startRotation + " -> " + ((ORIENTATIONS.get(rotation) + sensorOrientation + startRotation) % 360));
             return (ORIENTATIONS.get(rotation) + sensorOrientation + startRotation) % 360;
+        }
+
+        private String getBase64Image(Bitmap bitmap) {
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, byteArrayOutputStream);
+            byte[] bytes = byteArrayOutputStream.toByteArray();
+            return Base64.encodeToString(bytes, Base64.NO_WRAP);
         }
     }
 
