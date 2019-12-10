@@ -61,7 +61,6 @@ Future _platformCallHandler(MethodCall call) async {
       } else if (level > 0) {
         receivedLevel = BrightnessLevel.high;
       }
-//      print('Brightness level changed to: $receivedLevel');
       _cameraBrightnessLevelBehavior.sink.add(receivedLevel);
       break;
     default:

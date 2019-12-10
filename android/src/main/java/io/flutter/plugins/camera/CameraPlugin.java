@@ -7,6 +7,8 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
@@ -27,7 +29,7 @@ import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
 import android.os.Build;
-import android.os.Environment;
+import android.util.Base64;
 import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
@@ -54,16 +56,15 @@ import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.view.FlutterView;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -103,6 +104,12 @@ public class CameraPlugin implements MethodCallHandler {
     // Keep current rotation of device
     private int startRotation = 0;
 
+    // Keep brightness current
+    private int currentBrightness = 0; // normal brightness is default
+    private int tempBrightness = 0;
+    private int brightnessThreshold = 0;
+    static final int THRESHOLD_MAX = 5;
+
     static {
         ORIENTATIONS.append(Surface.ROTATION_0, 0);
         ORIENTATIONS.append(Surface.ROTATION_90, 90);
@@ -129,7 +136,7 @@ public class CameraPlugin implements MethodCallHandler {
                         int currentOrientation = ((int) Math.round(i / 90.0) * 90) % 360;
                         if (startRotation != currentOrientation) {
                             startRotation = currentOrientation;
-                            if (camera != null && camera.captureRequestBuilder != null) {
+                            if (camera != null) {
                                 camera.updateRotation();
                             }
                         }
@@ -266,7 +273,7 @@ public class CameraPlugin implements MethodCallHandler {
                 break;
             }
             case "takePicture": {
-                camera.takePicture((String) call.argument("path"), result);
+                camera.takePicture(result);
                 break;
             }
             case "prepareForVideoRecording": {
@@ -727,27 +734,26 @@ public class CameraPlugin implements MethodCallHandler {
             }
         }
 
-        private void takePicture(String filePath, @NonNull final Result result) {
-            final File file = new File(filePath);
-
-            if (file.exists()) {
-                result.error(
-                        "fileExists",
-                        "File at path '" + filePath + "' already exists. Cannot overwrite.",
-                        null);
-                return;
-            }
-
+        private void takePicture(@NonNull final Result result) {
             pictureImageReader.setOnImageAvailableListener(
                     new ImageReader.OnImageAvailableListener() {
                         @Override
                         public void onImageAvailable(ImageReader reader) {
                             try (Image image = reader.acquireLatestImage()) {
                                 ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-                                writeToFile(buffer, file);
-                                result.success(null);
-                            } catch (IOException e) {
-                                result.error("IOError", "Failed saving image", null);
+                                byte jpegBytes[] = new byte[buffer.remaining()];
+                                buffer.get(jpegBytes);
+                                final Bitmap imageBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
+                                final String base64 = getBase64Image(imageBitmap);
+                                printLog(base64);
+
+                                result.success(new HashMap() {{
+                                    put("base64String", base64);
+                                    put("width", image.getWidth());
+                                    put("height", image.getHeight());
+                                }});
+                            } catch (Exception e) {
+                                result.error("IOError", "Convert image to base64 fail", null);
                             }
                         }
                     },
@@ -950,12 +956,14 @@ public class CameraPlugin implements MethodCallHandler {
 
         private void updateRotation() {
             try {
-                cameraCaptureSession.stopRepeating();
-                // Orientation
-                int r = activity.getWindowManager().getDefaultDisplay().getRotation();
-                if (isFrontFacing) r = -r;
-                captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(r));
-                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+                if (cameraCaptureSession != null && captureRequestBuilder != null) {
+                    cameraCaptureSession.stopRepeating();
+                    // Orientation
+                    int r = activity.getWindowManager().getDefaultDisplay().getRotation();
+                    if (isFrontFacing) r = -r;
+                    captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(r));
+                    cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+                }
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -1065,7 +1073,27 @@ public class CameraPlugin implements MethodCallHandler {
                         public void onImageAvailable(final ImageReader reader) {
                             Image image = reader.acquireLatestImage();
                             if (image == null) return;
-                            getBrightnessValue(image);
+
+                            // Parse brightness session
+                            int brightness = parseBrightnessValue(image);
+                            if (brightness != -100) {
+                                if (brightness == tempBrightness) {
+                                    brightnessThreshold++;
+                                } else {
+                                    tempBrightness = brightness;
+                                    brightnessThreshold = 0;
+                                }
+                                if (brightnessThreshold > THRESHOLD_MAX) {
+                                    brightnessThreshold = 0;
+                                    // Notify in changed only
+                                    if (currentBrightness != tempBrightness) {
+                                        currentBrightness = tempBrightness;
+                                        channel.invokeMethod("camera.brightnessLevel", currentBrightness);
+                                    }
+                                }
+                            }
+
+                            // Parse frame session
                             List<Map<String, Object>> planes = new ArrayList<>();
                             ByteBuffer buffers[] = new ByteBuffer[image.getPlanes().length];
                             int i = 0;
@@ -1104,7 +1132,12 @@ public class CameraPlugin implements MethodCallHandler {
                     null);
         }
 
-        private void getBrightnessValue(Image image) {
+        /***
+         * Parse brightness values from Image using openCv converter
+         * @param image
+         * @return 0 is normal, 1 is high and -1 is low brightness, -100 for exception
+         */
+        private int parseBrightnessValue(Image image) {
             try {
                 ByteBuffer imageBuffer = image.getPlanes()[0].getBuffer();
                 ByteBuffer buffer = ByteBuffer.allocate(imageBuffer.capacity());
@@ -1133,10 +1166,10 @@ public class CameraPlugin implements MethodCallHandler {
                  * Get total of pixel and calculate averageLuminance*/
                 Scalar sumElems = Core.sumElems(hsv_channel.get(2));
                 int averageLuminance = (int) (sumElems.val[0] / (hsv_channel.get(2).rows() * hsv_channel.get(2).cols()));
-//                Log.d("CAM", "average: " + averageLuminance);
-                int r = averageLuminance < 50 ? -1 : (averageLuminance >= 216 ? 1 : 0);
-                channel.invokeMethod("camera.brightnessLevel", r);
-                //            // Save mat to image
+                return averageLuminance < 50 ? -1 : (averageLuminance >= 216 ? 1 : 0);
+//                channel.invokeMethod("camera.brightnessLevel", r);
+
+                // Save mat to image only for debugs
 //            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
 //            File path = new File(Environment.getExternalStorageDirectory() + "/Images/");
 //            path.mkdirs();
@@ -1146,8 +1179,9 @@ public class CameraPlugin implements MethodCallHandler {
 
             } catch (Exception e) {
                 e.printStackTrace();
+                // Skip this exception
             }
-
+            return -100;
         }
 
         ByteBuffer bufferClone(ByteBuffer original) {
@@ -1361,6 +1395,13 @@ public class CameraPlugin implements MethodCallHandler {
 //            printLog("sensor Orientation " + sensorOrientation);
 //            printLog("Change stat rotate " + startRotation + " -> " + ((ORIENTATIONS.get(rotation) + sensorOrientation + startRotation) % 360));
             return (ORIENTATIONS.get(rotation) + sensorOrientation + startRotation) % 360;
+        }
+
+        private String getBase64Image(Bitmap bitmap) {
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, byteArrayOutputStream);
+            byte[] bytes = byteArrayOutputStream.toByteArray();
+            return Base64.encodeToString(bytes, Base64.NO_WRAP);
         }
     }
 
