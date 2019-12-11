@@ -110,6 +110,9 @@ public class CameraPlugin implements MethodCallHandler {
     private int brightnessThreshold = 0;
     static final int THRESHOLD_MAX = 5;
 
+    // Keep result for delay methods
+    private Result currentResult;
+
     static {
         ORIENTATIONS.append(Surface.ROTATION_0, 0);
         ORIENTATIONS.append(Surface.ROTATION_90, 90);
@@ -226,6 +229,7 @@ public class CameraPlugin implements MethodCallHandler {
 
     @Override
     public void onMethodCall(MethodCall call, final Result result) {
+        currentResult = result;
         switch (call.method) {
             case "availableCameras":
                 try {
@@ -256,9 +260,12 @@ public class CameraPlugin implements MethodCallHandler {
                         }
                         cameras.add(details);
                     }
-                    result.success(cameras);
+                    if (currentResult != null) {
+                        currentResult.success(cameras);
+                        currentResult = null;
+                    }
                 } catch (Exception e) {
-                    handleException(e, result);
+                    handleException(e);
                 }
                 break;
             case "initialize": {
@@ -268,28 +275,31 @@ public class CameraPlugin implements MethodCallHandler {
                 if (camera != null) {
                     camera.close();
                 }
-                camera = new Camera(cameraName, resolutionPreset, result, enableAudio);
+                camera = new Camera(cameraName, resolutionPreset, enableAudio);
                 orientationEventListener.enable();
                 break;
             }
             case "takePicture": {
-                camera.takePicture(result);
+                camera.takePicture();
                 break;
             }
             case "prepareForVideoRecording": {
                 // This optimization is not required for Android.
-                result.success(null);
+                if (currentResult != null) {
+                    currentResult.success(null);
+                    currentResult = null;
+                }
                 break;
             }
-            case "startVideoRecording": {
-                final String filePath = call.argument("filePath");
-                camera.startVideoRecording(filePath, result);
-                break;
-            }
-            case "stopVideoRecording": {
-                camera.stopVideoRecording(result);
-                break;
-            }
+//            case "startVideoRecording": {
+//                final String filePath = call.argument("filePath");
+//                camera.startVideoRecording(filePath, result);
+//                break;
+//            }
+//            case "stopVideoRecording": {
+//                camera.stopVideoRecording(result);
+//                break;
+//            }
             case "startImageStream": {
                 // Register sensor light callback when on image stream to keep reverse state before
                 if (autoFlashLight) {
@@ -299,9 +309,8 @@ public class CameraPlugin implements MethodCallHandler {
                 // Start image stream
                 try {
                     camera.startPreviewWithImageStream();
-                    result.success(null);
                 } catch (Exception e) {
-                    handleException(e, result);
+                    handleException(e);
                 }
                 break;
             }
@@ -314,9 +323,8 @@ public class CameraPlugin implements MethodCallHandler {
                 // Stop image stream
                 try {
                     camera.startPreview();
-                    result.success(null);
                 } catch (Exception e) {
-                    handleException(e, result);
+                    handleException(e);
                 }
                 break;
             }
@@ -325,7 +333,10 @@ public class CameraPlugin implements MethodCallHandler {
                     camera.dispose();
                 }
                 orientationEventListener.disable();
-                result.success(null);
+                if (currentResult != null) {
+                    currentResult.success(true);
+                    currentResult = null;
+                }
                 break;
             }
             case "compareFrame": {
@@ -334,12 +345,18 @@ public class CameraPlugin implements MethodCallHandler {
                 int w = call.argument("width");
                 int h = call.argument("height");
                 boolean isDiff = camera.isDiffFrame(w, h, bytesOfImg1, bytesOfImg2);
-                result.success(isDiff);
+                if (currentResult != null) {
+                    currentResult.success(isDiff);
+                    currentResult = null;
+                }
                 break;
             }
             case "setFrameModeEnable": {
                 isFrameMode = call.arguments != null ? call.arguments.toString().equals("YES") : false;
-                result.success(true);
+                if (currentResult != null) {
+                    currentResult.success(true);
+                    currentResult = null;
+                }
                 break;
             }
 //            case "setTorchAuto": {
@@ -353,12 +370,18 @@ public class CameraPlugin implements MethodCallHandler {
                 try {
                     if (camera != null) {
                         camera.turnFlashLight(turnOn);
-                        result.success(true);
+                        if (currentResult != null) {
+                            currentResult.success(true);
+                            currentResult = null;
+                        }
                     } else {
-                        result.error("Camera is NULL", "", "");
+                        if (currentResult != null) {
+                            currentResult.error("Camera is NULL", "", "");
+                            currentResult = null;
+                        }
                     }
                 } catch (Exception e) {
-                    handleException(e, result);
+                    handleException(e);
                 }
                 break;
             }
@@ -371,7 +394,10 @@ public class CameraPlugin implements MethodCallHandler {
 //                break;
 //            }
             default:
-                result.notImplemented();
+                if (currentResult != null) {
+                    currentResult.notImplemented();
+                    currentResult = null;
+                }
                 break;
         }
     }
@@ -380,9 +406,10 @@ public class CameraPlugin implements MethodCallHandler {
     // on plugin registration for sdks incompatible with Camera2 (< 21). We want this plugin to
     // to be able to compile with <21 sdks for apps that want the camera and support earlier version.
     @SuppressWarnings("ConstantConditions")
-    private void handleException(Exception exception, Result result) {
-        if (exception instanceof CameraAccessException) {
-            result.error("CameraAccess", exception.getMessage(), null);
+    private void handleException(Exception exception) {
+        if (exception instanceof CameraAccessException && currentResult != null) {
+            currentResult.error("CameraAccess", exception.getMessage(), null);
+            currentResult = null;
         }
 
         throw (RuntimeException) exception;
@@ -432,7 +459,6 @@ public class CameraPlugin implements MethodCallHandler {
         Camera(
                 final String cameraName,
                 final String resolutionPreset,
-                @NonNull final Result result,
                 final boolean enableAudio) {
 
             this.cameraName = cameraName;
@@ -465,25 +491,28 @@ public class CameraPlugin implements MethodCallHandler {
                                 == CameraMetadata.LENS_FACING_FRONT;
                 computeBestCaptureSize(streamConfigurationMap);
                 computeBestPreviewAndRecordingSize(streamConfigurationMap, minHeight, captureSize);
-                if (cameraPermissionContinuation != null) {
-                    result.error("cameraPermission", "Camera permission request ongoing", null);
+                if (cameraPermissionContinuation != null && currentResult != null) {
+                    currentResult.error("cameraPermission", "Camera permission request ongoing", null);
+                    currentResult = null;
                 }
                 cameraPermissionContinuation =
                         new Runnable() {
                             @Override
                             public void run() {
                                 cameraPermissionContinuation = null;
-                                if (!hasCameraPermission()) {
-                                    result.error(
-                                            "cameraPermission", "MediaRecorderCamera permission not granted", null);
+                                if (!hasCameraPermission() && currentResult != null) {
+                                    currentResult.error(
+                                            " cameraPermission", "MediaRecorderCamera permission not granted", null);
+                                    currentResult = null;
                                     return;
                                 }
-                                if (enableAudio && !hasAudioPermission()) {
-                                    result.error(
+                                if (enableAudio && !hasAudioPermission() && currentResult != null) {
+                                    currentResult.error(
                                             "cameraPermission", "MediaRecorderAudio permission not granted", null);
+                                    currentResult = null;
                                     return;
                                 }
-                                open(result);
+                                open();
                             }
                         };
                 if (hasCameraPermission() && (!enableAudio || hasAudioPermission())) {
@@ -503,9 +532,15 @@ public class CameraPlugin implements MethodCallHandler {
                     }
                 }
             } catch (CameraAccessException e) {
-                result.error("CameraAccess", e.getMessage(), null);
+                if (currentResult != null) {
+                    currentResult.error("CameraAccess", e.getMessage(), null);
+                    currentResult = null;
+                }
             } catch (IllegalArgumentException e) {
-                result.error("IllegalArgumentException", e.getMessage(), null);
+                if (currentResult != null) {
+                    currentResult.error("IllegalArgumentException", e.getMessage(), null);
+                    currentResult = null;
+                }
             }
         }
 
@@ -633,10 +668,13 @@ public class CameraPlugin implements MethodCallHandler {
             mediaRecorder.prepare();
         }
 
-        private void open(@Nullable final Result result) {
+        private void open() {
             if (!hasCameraPermission()) {
-                if (result != null)
-                    result.error("cameraPermission", "Camera permission not granted", null);
+                if (currentResult != null) {
+                    currentResult.error("cameraPermission", "Camera permission not granted", null);
+                    currentResult = null;
+                }
+
             } else {
                 try {
                     pictureImageReader =
@@ -658,19 +696,22 @@ public class CameraPlugin implements MethodCallHandler {
                                     try {
                                         startPreview();
                                     } catch (CameraAccessException e) {
-                                        if (result != null)
-                                            result.error("CameraAccess", e.getMessage(), null);
+                                        if (currentResult != null) {
+                                            currentResult.error("CameraAccess", e.getMessage(), null);
+                                            currentResult = null;
+                                        }
                                         cameraDevice.close();
                                         Camera.this.cameraDevice = null;
                                         return;
                                     }
 
-                                    if (result != null) {
+                                    if (currentResult != null) {
                                         Map<String, Object> reply = new HashMap<>();
                                         reply.put("textureId", textureEntry.id());
                                         reply.put("previewWidth", previewSize.getWidth());
                                         reply.put("previewHeight", previewSize.getHeight());
-                                        result.success(reply);
+                                        currentResult.success(reply);
+                                        currentResult = null;
                                     }
                                 }
 
@@ -721,20 +762,15 @@ public class CameraPlugin implements MethodCallHandler {
                             },
                             null);
                 } catch (CameraAccessException e) {
-                    if (result != null) result.error("cameraAccess", e.getMessage(), null);
+                    if (currentResult != null) {
+                        currentResult.error("cameraAccess", e.getMessage(), null);
+                        currentResult = null;
+                    }
                 }
             }
         }
 
-        private void writeToFile(ByteBuffer buffer, File file) throws IOException {
-            try (FileOutputStream outputStream = new FileOutputStream(file)) {
-                while (0 < buffer.remaining()) {
-                    outputStream.getChannel().write(buffer);
-                }
-            }
-        }
-
-        private void takePicture(@NonNull final Result result) {
+        private void takePicture() {
             pictureImageReader.setOnImageAvailableListener(
                     new ImageReader.OnImageAvailableListener() {
                         @Override
@@ -745,15 +781,20 @@ public class CameraPlugin implements MethodCallHandler {
                                 buffer.get(jpegBytes);
                                 final Bitmap imageBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
                                 final String base64 = getBase64Image(imageBitmap);
-                                printLog(base64);
 
-                                result.success(new HashMap() {{
-                                    put("base64String", base64);
-                                    put("width", image.getWidth());
-                                    put("height", image.getHeight());
-                                }});
+                                if (currentResult != null) {
+                                    currentResult.success(new HashMap() {{
+                                        put("base64String", base64);
+                                        put("width", image.getWidth());
+                                        put("height", image.getHeight());
+                                    }});
+                                    currentResult = null;
+                                }
                             } catch (Exception e) {
-                                result.error("IOError", "Convert image to base64 fail", null);
+                                if (currentResult != null) {
+                                    currentResult.error("IOError", "Convert image to base64 fail", null);
+                                    currentResult = null;
+                                }
                             }
                         }
                     },
@@ -787,12 +828,19 @@ public class CameraPlugin implements MethodCallHandler {
                                     default:
                                         reason = "Unknown reason";
                                 }
-                                result.error("captureFailure", reason, null);
+
+                                if (currentResult != null) {
+                                    currentResult.error("captureFailure", reason, null);
+                                    currentResult = null;
+                                }
                             }
                         },
                         null);
             } catch (CameraAccessException e) {
-                result.error("cameraAccess", e.getMessage(), null);
+                if (currentResult != null) {
+                    currentResult.error("cameraAccess", e.getMessage(), null);
+                    currentResult = null;
+                }
             }
         }
 
@@ -926,6 +974,12 @@ public class CameraPlugin implements MethodCallHandler {
                                     captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
                                 }
                                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+
+                                // complete start preview process
+                                if (currentResult != null) {
+                                    currentResult.success(true);
+                                    currentResult = null;
+                                }
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
                             }
@@ -1033,6 +1087,12 @@ public class CameraPlugin implements MethodCallHandler {
 
                                 // send flash event
                                 channel.invokeMethod("camera.torchMode", isFlashOn);
+
+                                // complete init camera stream
+                                if (currentResult != null) {
+                                    currentResult.success(true);
+                                    currentResult = null;
+                                }
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
                             }
@@ -1323,6 +1383,10 @@ public class CameraPlugin implements MethodCallHandler {
         }
 
         private void sendErrorEvent(String errorDescription) {
+            if (currentResult != null) {
+                currentResult.error("Camera exception", errorDescription, null);
+                currentResult = null;
+            }
             if (eventSink != null) {
                 Map<String, String> event = new HashMap<>();
                 event.put("eventType", "error");

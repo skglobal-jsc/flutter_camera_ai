@@ -25,7 +25,7 @@ typedef onLatestImageAvailable = Function(CameraImage image);
 final _cameraStableBehavior = BehaviorSubject<bool>();
 final _cameraTorchModeBehavior = BehaviorSubject<bool>();
 
-final _cameraBrightnessLevelBehavior = BehaviorSubject<BrightnessLevel>();
+final _cameraBrightnessLevelBehavior = BehaviorSubject<BrightnessLevel>.seeded(BrightnessLevel.normal);
 
 Function(bool) get addCameraStable => _cameraStableBehavior.sink.add;
 Stream<bool> get cameraStableEvent => _cameraStableBehavior.stream;
@@ -34,9 +34,11 @@ Stream<bool> get cameraTorchEvent => _cameraTorchModeBehavior.stream;
 
 // Extract brightness level from native
 Stream<BrightnessLevel> get cameraBrightnessLevel => _cameraBrightnessLevelBehavior.stream;
+BrightnessLevel get currentBrightnessLevel => _cameraBrightnessLevelBehavior.stream.value;
 
 Future<Null> initCamera() async {
   _channel.setMethodCallHandler(_platformCallHandler);
+  return Future;
 }
 
 Future _platformCallHandler(MethodCall call) async {
@@ -288,7 +290,7 @@ class CameraController extends ValueNotifier<CameraValue> {
   /// Initializes the camera on the device.
   ///
   /// Throws a [CameraException] if the initialization fails.
-  Future<void> initialize() async {
+  Future initialize() async {
     if (_isDisposed) {
       return Future<void>.value();
     }
@@ -417,7 +419,7 @@ class CameraController extends ValueNotifier<CameraValue> {
   /// Throws a [CameraException] if image streaming or video recording has
   /// already started.
   // TODO(bmparr): Add settings for resolution and fps.
-  Future<void> startImageStream(onLatestImageAvailable onAvailable) async {
+  Future startImageStream(onLatestImageAvailable onAvailable) async {
     if (!value.isInitialized || _isDisposed) {
       throw CameraException(
         'Uninitialized CameraController',
@@ -445,19 +447,18 @@ class CameraController extends ValueNotifier<CameraValue> {
     }
     const EventChannel cameraEventChannel =
         EventChannel('plugins.flutter.io/camera/imageStream');
-    _imageStreamSubscription =
-        cameraEventChannel.receiveBroadcastStream().listen(
-      (dynamic imageData) {
+    _imageStreamSubscription = cameraEventChannel.receiveBroadcastStream().listen((dynamic imageData) {
         onAvailable(CameraImage._fromPlatformData(imageData));
       },
     );
+    return Future;
   }
 
   /// Stop streaming images from platform camera.
   ///
   /// Throws a [CameraException] if image streaming was not started or video
   /// recording was started.
-  Future<void> stopImageStream() async {
+  Future stopImageStream() async {
     if (!value.isInitialized || _isDisposed) {
       throw CameraException(
         'Uninitialized CameraController',
@@ -486,6 +487,7 @@ class CameraController extends ValueNotifier<CameraValue> {
 
     _imageStreamSubscription.cancel();
     _imageStreamSubscription = null;
+    return Future;
   }
 
   /// Start a video recording and save the file to [path].
