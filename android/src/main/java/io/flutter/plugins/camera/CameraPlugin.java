@@ -891,16 +891,16 @@ public class CameraPlugin implements MethodCallHandler {
 
             previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
-            if (!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
-                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)) {
-                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-
-                } else if (android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)) {
-                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
-                } else {
-                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
-                }
-            }
+//            if (!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+//                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)) {
+//                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+//
+//                } else if (android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)) {
+//                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+//                } else {
+//                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+//                }
+//            }
 
             captureRequestBuilder.addTarget(previewSurface);
             surfaces.add(pictureImageReader.getSurface());
@@ -919,12 +919,15 @@ public class CameraPlugin implements MethodCallHandler {
                             }
                             try {
                                 cameraCaptureSession = session;
-                                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
-                                    captureRequestBuilder.set(
-                                            CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
-                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
-                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
-                                }
+//                                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+//                                    captureRequestBuilder.set(
+//                                            CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+//                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+//                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
+//                                }
+                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                                setAutoFlash(captureRequestBuilder);
                                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
@@ -938,7 +941,10 @@ public class CameraPlugin implements MethodCallHandler {
                     },
                     null);
         }
-
+        private void setAutoFlash(CaptureRequest.Builder requestBuilder) {
+            requestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
+                    CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+        }
         private void turnFlashLight(boolean turnOn) {
             try {
                 cameraCaptureSession.stopRepeating();
