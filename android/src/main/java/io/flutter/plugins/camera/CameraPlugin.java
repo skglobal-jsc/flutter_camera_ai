@@ -24,6 +24,8 @@ import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
+import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
@@ -70,7 +72,6 @@ import java.util.List;
 import java.util.Map;
 
 public class CameraPlugin implements MethodCallHandler {
-
     private static final int CAMERA_REQUEST_ID = 513469796;
     private static final String TAG = "CameraPlugin";
     private final static boolean IS_NEXUS_5X = Build.MODEL.equalsIgnoreCase("Nexus 5X");
@@ -117,6 +118,15 @@ public class CameraPlugin implements MethodCallHandler {
         ORIENTATIONS.append(Surface.ROTATION_270, 270);
     }
 
+    enum CameraState {
+        PREVIEW,
+        WAITING_LOCK,
+        WAITING_PRECAPTURE,
+        WAITING_NON_PRECAPTURE,
+        TAKEN
+    }
+
+    private CameraState cameraState = CameraState.PREVIEW;
     private CameraPlugin(Registrar registrar, FlutterView view) {
         MovingDetectorJNI.newInstance();
         this.registrar = registrar;
@@ -273,7 +283,12 @@ public class CameraPlugin implements MethodCallHandler {
                 break;
             }
             case "takePicture": {
-                camera.takePicture(result);
+                camera.takePicture();
+                result.success(null);
+                break;
+            }
+            case "capturePicture": {
+                camera.captureStillImage(result);
                 break;
             }
             case "prepareForVideoRecording": {
@@ -295,7 +310,6 @@ public class CameraPlugin implements MethodCallHandler {
                 if (autoFlashLight) {
                     mSensorManager.registerListener(sensorLightListener, mLightSensor, SensorManager.SENSOR_DELAY_UI);
                 }
-
                 // Start image stream
                 try {
                     camera.startPreviewWithImageStream();
@@ -310,7 +324,6 @@ public class CameraPlugin implements MethodCallHandler {
                 if (autoFlashLight) {
                     mSensorManager.unregisterListener(sensorLightListener);
                 }
-
                 // Stop image stream
                 try {
                     camera.startPreview();
@@ -733,8 +746,139 @@ public class CameraPlugin implements MethodCallHandler {
                 }
             }
         }
+        private void takePicture() {
+            lockFocus();
+        }
+        /**
+         * Lock the focus as the first step for a still image capture.
+         */
+        private void lockFocus() {
+            try {
+                // This is how to tell the camera to lock focus.
+                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                        CameraMetadata.CONTROL_AF_TRIGGER_START);
+                // Tell #mCaptureCallback to wait for the lock.
+                cameraState = CameraState.WAITING_LOCK;
+                cameraCaptureSession.capture(captureRequestBuilder.build(), captureCallBackBack,
+                        null);
+                Log.d("Camera Step:", "lock focus");
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
+            }
+        }
 
-        private void takePicture(@NonNull final Result result) {
+        /**
+         * Unlock the focus. This method should be called when still image capture sequence is
+         * finished.
+         */
+        private void unlockFocus() {
+            try {
+                // Reset the auto-focus trigger
+                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                        CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
+//            setAutoFlash(mPreviewRequestBuilder);
+                cameraCaptureSession.capture(captureRequestBuilder.build(), captureCallBackBack,
+                        null);
+                // After this, the camera will go back to the normal state of preview.
+                cameraState = CameraState.PREVIEW;
+                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), captureCallBackBack,
+                        null);
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
+            }
+        }
+
+        /**
+         * A {@link CameraCaptureSession.CaptureCallback} that handles events related to JPEG capture.
+         */
+        private CameraCaptureSession.CaptureCallback captureCallBackBack
+                = new CameraCaptureSession.CaptureCallback() {
+            private void process(CaptureResult result) {
+                Log.d("Camera Step:", "camera state " + cameraState);
+                switch (cameraState) {
+                    case WAITING_LOCK: {
+                        Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
+                        Log.d("Camera Step:", "afState: " + afState);
+                        if (afState == null) {
+                            Log.d("Camera Step:", "capture picture with afState null");
+                            channel.invokeMethod("camera.capturePicture", true);
+                        } else if (CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED == afState ||
+                                CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED == afState) {
+                            // CONTROL_AE_STATE can be null on some devices
+                            Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
+                            Log.d("Camera Step:", "aeState: " + aeState);
+                            if (aeState == null ||
+                                    aeState == CaptureResult.CONTROL_AE_STATE_CONVERGED) {
+                                cameraState = CameraState.TAKEN;
+                                channel.invokeMethod("camera.capturePicture", true);
+                                Log.d("Camera Step:", "capture picture");
+                            } else {
+                                Log.d("Camera Step:", "precapture sequence");
+                                runPrecaptureSequence();
+                            }
+                        }
+                        break;
+                    }
+                    case WAITING_PRECAPTURE: {
+                        // CONTROL_AE_STATE can be null on some devices
+                        Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
+                        if (aeState == null ||
+                                aeState == CaptureResult.CONTROL_AE_STATE_PRECAPTURE ||
+                                aeState == CaptureRequest.CONTROL_AE_STATE_FLASH_REQUIRED) {
+                            cameraState = CameraState.WAITING_NON_PRECAPTURE;
+                            Log.d("Camera Step:", "waiting precapture");
+
+                        }
+                        break;
+                    }
+                    case WAITING_NON_PRECAPTURE: {
+                        // CONTROL_AE_STATE can be null on some devices
+                        Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
+                        if (aeState == null || aeState != CaptureResult.CONTROL_AE_STATE_PRECAPTURE) {
+                            cameraState = CameraState.TAKEN;
+                            Log.d("Camera Step:", "picture taken");
+                            channel.invokeMethod("camera.capturePicture", true);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            @Override
+            public void onCaptureProgressed(@NonNull CameraCaptureSession session,
+                                            @NonNull CaptureRequest request,
+                                            @NonNull CaptureResult partialResult) {
+                process(partialResult);
+            }
+
+            @Override
+            public void onCaptureCompleted(@NonNull CameraCaptureSession session,
+                                           @NonNull CaptureRequest request,
+                                           @NonNull TotalCaptureResult result) {
+                process(result);
+            }
+
+        };
+
+        /**
+         * Run the precapture sequence for capturing a still image. This method should be called when
+         * we get a response in {@link #captureCallBackBack} from {@link #lockFocus()}.
+         */
+        private void runPrecaptureSequence() {
+            try {
+                // This is how to tell the camera to trigger.
+                captureRequestBuilder.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
+                        CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START);
+                // Tell #mCaptureCallback to wait for the precapture sequence to be set.
+                cameraState = CameraState.WAITING_PRECAPTURE;
+                cameraCaptureSession.capture(captureRequestBuilder.build(), captureCallBackBack,
+                        null);
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
+            }
+        }
+
+        private void captureStillImage(@NonNull final Result result) {
             pictureImageReader.setOnImageAvailableListener(
                     new ImageReader.OnImageAvailableListener() {
                         @Override
@@ -746,7 +890,6 @@ public class CameraPlugin implements MethodCallHandler {
                                 final Bitmap imageBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
                                 final String base64 = getBase64Image(imageBitmap);
                                 printLog(base64);
-
                                 result.success(new HashMap() {{
                                     put("base64String", base64);
                                     put("width", image.getWidth());
@@ -754,6 +897,7 @@ public class CameraPlugin implements MethodCallHandler {
                                 }});
                             } catch (Exception e) {
                                 result.error("IOError", "Convert image to base64 fail", null);
+                                channel.invokeMethod("camera.capturePicture", false);
                             }
                         }
                     },
@@ -767,7 +911,6 @@ public class CameraPlugin implements MethodCallHandler {
                 int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
                 if (isFrontFacing) rotation = -rotation;
                 captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
-
                 cameraCaptureSession.capture(
                         captureBuilder.build(),
                         new CameraCaptureSession.CaptureCallback() {
@@ -788,6 +931,15 @@ public class CameraPlugin implements MethodCallHandler {
                                         reason = "Unknown reason";
                                 }
                                 result.error("captureFailure", reason, null);
+                                channel.invokeMethod("camera.capturePicture", false);
+                                unlockFocus();
+                            }
+
+                            @Override
+                            public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
+                                super.onCaptureCompleted(session, request, result);
+                                channel.invokeMethod("camera.capturePicture", false);
+                                unlockFocus();
                             }
                         },
                         null);
@@ -882,7 +1034,6 @@ public class CameraPlugin implements MethodCallHandler {
 
         private void startPreview() throws CameraAccessException {
             closeCaptureSession();
-
             SurfaceTexture surfaceTexture = textureEntry.surfaceTexture();
             surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
             captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
@@ -891,17 +1042,6 @@ public class CameraPlugin implements MethodCallHandler {
 
             previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
-//            if (!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
-//                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)) {
-//                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-//
-//                } else if (android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)) {
-//                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
-//                } else {
-//                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
-//                }
-//            }
-
             captureRequestBuilder.addTarget(previewSurface);
             surfaces.add(pictureImageReader.getSurface());
 
@@ -909,7 +1049,6 @@ public class CameraPlugin implements MethodCallHandler {
             cameraDevice.createCaptureSession(
                     surfaces,
                     new CameraCaptureSession.StateCallback() {
-
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession session) {
                             printLog("Preview: Configured camera capture session");
@@ -925,10 +1064,20 @@ public class CameraPlugin implements MethodCallHandler {
 //                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
 //                                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
 //                                }
-                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+//                                if (!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+//                                    if (android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)) {
+//                                        captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+//
+//                                    } else if (android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)) {
+//                                        captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+//                                    } else {
+//                                        captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+//                                    }
+//                                }
+
+                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
                                 setAutoFlash(captureRequestBuilder);
-                                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+                                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), captureCallBackBack, null);
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
                             }
@@ -941,10 +1090,13 @@ public class CameraPlugin implements MethodCallHandler {
                     },
                     null);
         }
+
         private void setAutoFlash(CaptureRequest.Builder requestBuilder) {
+
             requestBuilder.set(CaptureRequest.CONTROL_AE_MODE,
                     CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
         }
+
         private void turnFlashLight(boolean turnOn) {
             try {
                 cameraCaptureSession.stopRepeating();
@@ -993,16 +1145,16 @@ public class CameraPlugin implements MethodCallHandler {
 
             previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
-            if (!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
-                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)) {
-                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-
-                } else if (android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)) {
-                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
-                } else {
-                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
-                }
-            }
+//            if (!android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
+//                if (android.os.Build.MANUFACTURER.equalsIgnoreCase(HUAWEI_DEVICE)) {
+//                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+//
+//                } else if (android.os.Build.MANUFACTURER.equalsIgnoreCase(SAMSUNG_DEVICE)) {
+//                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+//                } else {
+//                    captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
+//                }
+//            }
             captureRequestBuilder.addTarget(previewSurface);
 
             surfaces.add(imageStreamReader.getSurface());
@@ -1347,7 +1499,6 @@ public class CameraPlugin implements MethodCallHandler {
 
         private void close() {
             closeCaptureSession();
-
             if (cameraDevice != null) {
                 cameraDevice.close();
                 cameraDevice = null;

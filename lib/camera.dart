@@ -24,8 +24,9 @@ typedef onLatestImageAvailable = Function(CameraImage image);
 
 final _cameraStableBehavior = BehaviorSubject<bool>();
 final _cameraTorchModeBehavior = BehaviorSubject<bool>();
-
+final _cameraTakePictureBehavior = BehaviorSubject<bool>();
 final _cameraBrightnessLevelBehavior = BehaviorSubject<BrightnessLevel>();
+
 
 Function(bool) get addCameraStable => _cameraStableBehavior.sink.add;
 Stream<bool> get cameraStableEvent => _cameraStableBehavior.stream;
@@ -34,6 +35,9 @@ Stream<bool> get cameraTorchEvent => _cameraTorchModeBehavior.stream;
 
 // Extract brightness level from native
 Stream<BrightnessLevel> get cameraBrightnessLevel => _cameraBrightnessLevelBehavior.stream;
+
+//Listen take picture event from native
+Stream<bool> get cameraTakePictureEvent => _cameraTakePictureBehavior.stream;
 
 Future<Null> initCamera() async {
   _channel.setMethodCallHandler(_platformCallHandler);
@@ -62,6 +66,11 @@ Future _platformCallHandler(MethodCall call) async {
         receivedLevel = BrightnessLevel.high;
       }
       _cameraBrightnessLevelBehavior.sink.add(receivedLevel);
+      break;
+    case "camera.capturePicture":
+      bool canCapture = call.arguments as bool;
+      print('capture picture from : $canCapture');
+      _cameraTakePictureBehavior.sink.add(canCapture);
       break;
     default:
       print('Unknowm method ${call.method} ');
@@ -378,7 +387,7 @@ class CameraController extends ValueNotifier<CameraValue> {
   /// The file can be read as this function returns.
   ///
   /// Throws a [CameraException] if the capture fails.
-  Future<dynamic> takePicture(String path) async {
+  Future<dynamic> takePicture() async {
     if (!value.isInitialized || _isDisposed) {
       throw CameraException(
         'Uninitialized CameraController.',
@@ -394,8 +403,7 @@ class CameraController extends ValueNotifier<CameraValue> {
     try {
       // value = value.copyWith(isTakingPicture: true);
       return _channel.invokeMethod<void>(
-        'takePicture',
-        <String, dynamic>{'textureId': _textureId, 'path': path},
+        'takePicture'
       );
       // value = value.copyWith(isTakingPicture: false);
     } on PlatformException catch (e) {
@@ -403,6 +411,40 @@ class CameraController extends ValueNotifier<CameraValue> {
       throw CameraException(e.code, e.message);
     }
   }
+
+  /// Captures an image and saves it to [path].
+  ///
+  /// A path can for example be obtained using
+  /// [path_provider](https://pub.dartlang.org/packages/path_provider).
+  ///
+  /// If a file already exists at the provided path an error will be thrown.
+  /// The file can be read as this function returns.
+  ///
+  /// Throws a [CameraException] if the capture fails.
+  Future<dynamic> capturePicture(String path) async {
+    if (!value.isInitialized || _isDisposed) {
+      throw CameraException(
+        'Uninitialized CameraController.',
+        'takePicture was called on uninitialized CameraController',
+      );
+    }
+    if (value.isTakingPicture) {
+      throw CameraException(
+        'Previous capture has not returned yet.',
+        'takePicture was called before the previous capture returned.',
+      );
+    }
+    try {
+       value = value.copyWith(isTakingPicture: true);
+      return _channel.invokeMethod<void>(
+        'capturePicture');
+      // value = value.copyWith(isTakingPicture: false);
+    } on PlatformException catch (e) {
+      value = value.copyWith(isTakingPicture: false);
+      throw CameraException(e.code, e.message);
+    }
+  }
+
 
   /// Start streaming images from platform camera.
   ///
