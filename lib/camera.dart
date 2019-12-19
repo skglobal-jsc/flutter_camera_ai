@@ -36,9 +36,8 @@ Stream<bool> get cameraTorchEvent => _cameraTorchModeBehavior.stream;
 Stream<BrightnessLevel> get cameraBrightnessLevel => _cameraBrightnessLevelBehavior.stream;
 BrightnessLevel get currentBrightnessLevel => _cameraBrightnessLevelBehavior.stream.value;
 
-Future<Null> initCamera() async {
+initCamera() {
   _channel.setMethodCallHandler(_platformCallHandler);
-  return Future;
 }
 
 Future _platformCallHandler(MethodCall call) async {
