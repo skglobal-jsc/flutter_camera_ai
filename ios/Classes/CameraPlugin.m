@@ -197,7 +197,7 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     
     _captureDevice = [AVCaptureDevice deviceWithUniqueID:cameraName];
     [_captureDevice lockForConfiguration:nil];
-//    [_captureDevice setTorchMode:AVCaptureTorchModeAuto];
+    [_captureDevice setTorchMode:AVCaptureTorchModeOff];
     _captureDevice.activeVideoMinFrameDuration = CMTimeMake(1, 20);
     _captureDevice.activeVideoMaxFrameDuration = CMTimeMake(1, 25);
     [_captureDevice unlockForConfiguration];
@@ -266,6 +266,11 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 - (void)captureToFile:(NSString *)path result:(FlutterResult)result {
     AVCapturePhotoSettings *settings = [AVCapturePhotoSettings photoSettings];
     [settings setHighResolutionPhotoEnabled:YES];
+    // auto flash when capture
+    [_captureDevice lockForConfiguration:NULL];
+    [_captureDevice setTorchMode:(AVCaptureTorchModeAuto)];
+    [_captureDevice unlockForConfiguration];
+    // auto flash when capture
     [_capturePhotoOutput
      capturePhotoWithSettings:settings
      delegate:[[FLTSavePhotoDelegate alloc] initWithPath:path
