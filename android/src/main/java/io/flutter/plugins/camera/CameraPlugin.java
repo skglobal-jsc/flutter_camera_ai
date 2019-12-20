@@ -289,8 +289,8 @@ public class CameraPlugin implements MethodCallHandler {
                 break;
             }
             case "takePicture": {
-                camera.lockFocus();
-//                camera.takePicture();
+//                camera.lockFocus();
+                camera.takePicture();
 //                result.success(null);
                 break;
             }
@@ -842,29 +842,29 @@ public class CameraPlugin implements MethodCallHandler {
 //                Log.d("Camera Step:", "camera state " + cameraState);
                 switch (cameraState) {
                     case WAITING_LOCK: {
-//                        Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
-//                        Log.d("Camera Step:", "afState: " + afState);
-//                        if (afState == null) {
+                        Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
+                        Log.d("Camera Step:", "afState: " + afState);
+                        if (afState == null) {
 //                            Log.d("Camera Step:", "capture picture with afState null");
-//                            continueCapturePicture();
-////                            channel.invokeMethod("camera.capturePicture", true);
-//                        } else if (CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED == afState ||
-//                                CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED == afState) {
-//                            // CONTROL_AE_STATE can be null on some devices
-//                            Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
+                            runPreCaptureSequence();
+//                            channel.invokeMethod("camera.capturePicture", true);
+                        } else if (CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED == afState ||
+                                CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED == afState) {
+                            // CONTROL_AE_STATE can be null on some devices
+                            Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
 //                            Log.d("Camera Step:", "aeState: " + aeState);
-//                            if (aeState == null ||
-//                                    aeState == CaptureResult.CONTROL_AE_STATE_CONVERGED) {
-//                                cameraState = CameraState.TAKEN;
-//                                continueCapturePicture();
-////                                channel.invokeMethod("camera.capturePicture", true);
+                            if (aeState == null ||
+                                    aeState == CaptureResult.CONTROL_AE_STATE_CONVERGED) {
+                                cameraState = CameraState.TAKEN;
+                                continueCapturePicture();
+//                                channel.invokeMethod("camera.capturePicture", true);
 //                                Log.d("Camera Step:", "capture picture");
-//                            } else {
+                            } else {
 //                                Log.d("Camera Step:", "precapture sequence");
-//                                runPreCaptureSequence();
-//                            }
-//                        }
-                        runPreCaptureSequence();
+                                runPreCaptureSequence();
+                            }
+                        }
+
                         break;
                     }
                     case WAITING_PRECAPTURE: {
