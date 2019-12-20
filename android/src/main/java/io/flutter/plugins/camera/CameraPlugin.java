@@ -800,9 +800,9 @@ public class CameraPlugin implements MethodCallHandler {
                 cameraState = CameraState.WAITING_LOCK;
                 cameraCaptureSession.capture(captureRequestBuilder.build(), captureCallBackBack,
                         null);
-                Log.d("Camera Step:", "lock focus");
+//                Log.d("Camera Step:", "lock focus");
             } catch (CameraAccessException e) {
-                Log.d("Camera Step:", "lock exception " + e.toString());
+//                Log.d("Camera Step:", "lock exception " + e.toString());
                 e.printStackTrace();
                 if (currentResult != null) {
                     currentResult.error("cameraAccess", e.getMessage(), null);
@@ -839,10 +839,10 @@ public class CameraPlugin implements MethodCallHandler {
         private CameraCaptureSession.CaptureCallback captureCallBackBack
                 = new CameraCaptureSession.CaptureCallback() {
             private void process(CaptureResult result) {
-                Log.d("Camera Step:", "camera state " + cameraState);
+//                Log.d("Camera Step:", "camera state " + cameraState);
                 switch (cameraState) {
                     case WAITING_LOCK: {
-                        Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
+//                        Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
 //                        Log.d("Camera Step:", "afState: " + afState);
 //                        if (afState == null) {
 //                            Log.d("Camera Step:", "capture picture with afState null");
@@ -874,7 +874,7 @@ public class CameraPlugin implements MethodCallHandler {
                                 aeState == CaptureResult.CONTROL_AE_STATE_PRECAPTURE ||
                                 aeState == CaptureRequest.CONTROL_AE_STATE_FLASH_REQUIRED) {
                             cameraState = CameraState.WAITING_NON_PRECAPTURE;
-                            Log.d("Camera Step:", "waiting precapture");
+//                            Log.d("Camera Step:", "waiting precapture");
 
                         }
                         break;
@@ -884,7 +884,7 @@ public class CameraPlugin implements MethodCallHandler {
                         Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
                         if (aeState == null || aeState != CaptureResult.CONTROL_AE_STATE_PRECAPTURE) {
                             cameraState = CameraState.TAKEN;
-                            Log.d("Camera Step:", "picture taken");
+//                            Log.d("Camera Step:", "picture taken");
                             continueCapturePicture();
 //                            channel.invokeMethod("camera.capturePicture", true);
                         }
