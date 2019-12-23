@@ -197,7 +197,9 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     
     _captureDevice = [AVCaptureDevice deviceWithUniqueID:cameraName];
     [_captureDevice lockForConfiguration:nil];
-    [_captureDevice setTorchMode:AVCaptureTorchModeOff];
+    if ([_captureDevice isTorchModeSupported:AVCaptureTorchModeOff]) {
+        [_captureDevice setTorchMode:AVCaptureTorchModeOff];
+    }
     _captureDevice.activeVideoMinFrameDuration = CMTimeMake(1, 20);
     _captureDevice.activeVideoMaxFrameDuration = CMTimeMake(1, 25);
     [_captureDevice unlockForConfiguration];
@@ -250,7 +252,11 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 - (void)setTorchEnable:(BOOL)isEnable {
     if (_captureDevice && _captureDevice.isTorchAvailable) {
         [_captureDevice lockForConfiguration:nil];
-        [_captureDevice setTorchMode:isEnable ? AVCaptureTorchModeOn : AVCaptureTorchModeOff];
+        if (isEnable && [_captureDevice isTorchModeSupported:AVCaptureTorchModeOn]) {
+            [_captureDevice setTorchMode:AVCaptureTorchModeOn];
+        } else if (!isEnable && [_captureDevice isTorchModeSupported:AVCaptureTorchModeOff]) {
+            [_captureDevice setTorchMode:AVCaptureTorchModeOff];
+        }
         [_captureDevice unlockForConfiguration];
     }
 }
@@ -268,7 +274,9 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     [settings setHighResolutionPhotoEnabled:YES];
     // auto flash when capture
     [_captureDevice lockForConfiguration:NULL];
-    [_captureDevice setTorchMode:(AVCaptureTorchModeAuto)];
+    if ([_captureDevice isTorchModeSupported:AVCaptureTorchModeAuto]) {
+        [_captureDevice setTorchMode:(AVCaptureTorchModeAuto)];
+    }
     [_captureDevice unlockForConfiguration];
     // auto flash when capture
     [_capturePhotoOutput
