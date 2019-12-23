@@ -40,7 +40,7 @@ BrightnessLevel get currentBrightnessLevel => _cameraBrightnessLevelBehavior.str
 //Listen take picture event from native
 Stream<bool> get cameraTakePictureEvent => _cameraTakePictureBehavior.stream;
 
-Future<Null> initCamera() async {
+initCameraPlugin() {
   _channel.setMethodCallHandler(_platformCallHandler);
 }
 
@@ -376,6 +376,14 @@ class CameraController extends ValueNotifier<CameraValue> {
       case 'cameraClosing':
         value = value.copyWith(isRecordingVideo: false);
         break;
+    }
+  }
+  
+  Future<dynamic> requestFocus() async {
+    try {
+      return _channel.invokeMethod<void>('requestFocus');
+    } on PlatformException catch (e) {
+      throw CameraException(e.code, e.message);
     }
   }
 
