@@ -1154,8 +1154,7 @@ public class CameraPlugin implements MethodCallHandler {
             SurfaceTexture surfaceTexture = textureEntry.surfaceTexture();
             surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
 
-            captureRequestBuilder =
-                    cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
 
             // Orientation
             int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
