@@ -217,20 +217,20 @@ class CameraValue {
   bool isInitialized;
 
   /// True when a picture capture request has been sent but as not yet returned.
-  final bool isTakingPicture;
+  bool isTakingPicture;
 
   /// True when the camera is recording (not the same as previewing).
-  final bool isRecordingVideo;
+   bool isRecordingVideo;
 
   /// True when images from the camera are being streamed.
-  final bool isStreamingImages;
+   bool isStreamingImages;
 
-  final String errorDescription;
+   String errorDescription;
 
   /// The size of the preview in pixels.
   ///
   /// Is `null` until  [isInitialized] is `true`.
-  final Size previewSize;
+   Size previewSize;
 
   /// Convenience getter for `previewSize.height / previewSize.width`.
   ///
@@ -238,10 +238,6 @@ class CameraValue {
   double get aspectRatio => previewSize.height / previewSize.width;
 
   bool get hasError => errorDescription != null;
-
-  set hasInitialized (bool value) {
-    this.isInitialized = value;
-  }
 
   CameraValue copyWith({
     bool isInitialized,
