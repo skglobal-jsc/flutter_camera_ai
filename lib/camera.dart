@@ -197,7 +197,7 @@ class CameraPreview extends StatelessWidget {
 
 /// The state of a [CameraController].
 class CameraValue {
-  const CameraValue({
+  CameraValue({
     this.isInitialized,
     this.errorDescription,
     this.previewSize,
@@ -206,7 +206,7 @@ class CameraValue {
     this.isStreamingImages,
   });
 
-  const CameraValue.uninitialized()
+  CameraValue.uninitialized()
       : this(
             isInitialized: false,
             isRecordingVideo: false,
@@ -214,7 +214,7 @@ class CameraValue {
             isStreamingImages: false);
 
   /// True after [CameraController.initialize] has completed successfully.
-  final bool isInitialized;
+  bool isInitialized;
 
   /// True when a picture capture request has been sent but as not yet returned.
   final bool isTakingPicture;
@@ -238,6 +238,10 @@ class CameraValue {
   double get aspectRatio => previewSize.height / previewSize.width;
 
   bool get hasError => errorDescription != null;
+
+  set hasInitialized (bool value) {
+    this.isInitialized = value;
+  }
 
   CameraValue copyWith({
     bool isInitialized,
@@ -281,7 +285,7 @@ class CameraController extends ValueNotifier<CameraValue> {
     this.description,
     this.resolutionPreset, {
     this.enableAudio = true,
-  }) : super(const CameraValue.uninitialized());
+  }) : super(CameraValue.uninitialized());
 
   final CameraDescription description;
   final ResolutionPreset resolutionPreset;
@@ -299,8 +303,8 @@ class CameraController extends ValueNotifier<CameraValue> {
   ///
   /// Throws a [CameraException] if the initialization fails.
   Future initialize() async {
-    if (_isDisposed) {
-      return Future<void>.value();
+    if(value.isInitialized){
+      return Future;
     }
     try {
       _creatingCompleter = Completer<void>();
@@ -451,6 +455,23 @@ class CameraController extends ValueNotifier<CameraValue> {
       // value = value.copyWith(isTakingPicture: false);
     } on PlatformException catch (e) {
       value = value.copyWith(isTakingPicture: false);
+      throw CameraException(e.code, e.message);
+    }
+  }
+  /// Dispose camera.
+  /// Throws a [CameraException] if the dispose fails.
+  Future<dynamic> disposeCamera() async {
+    if (!value.isInitialized || _isDisposed) {
+      throw CameraException(
+        'Uninitialized CameraController.',
+        'takePicture was called on uninitialized CameraController',
+      );
+    }
+    try {
+      value.isInitialized = false;
+      return _channel.invokeMethod<void>(
+          "dispose");
+    } on PlatformException catch (e) {
       throw CameraException(e.code, e.message);
     }
   }
