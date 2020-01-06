@@ -1,6 +1,5 @@
 package io.flutter.plugins.camera;
 
-import static android.content.Context.SENSOR_SERVICE;
 import static android.view.OrientationEventListener.ORIENTATION_UNKNOWN;
 
 import android.Manifest;
@@ -13,8 +12,6 @@ import android.graphics.ImageFormat;
 import android.graphics.Point;
 import android.graphics.SurfaceTexture;
 import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -58,7 +55,6 @@ import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.view.FlutterView;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -71,6 +67,7 @@ import java.util.Map;
 
 public class CameraPlugin implements MethodCallHandler {
     private static final int CAMERA_REQUEST_ID = 513469796;
+    private static final int MAX_IMAGE_WIDTH_CAPTURE = 1024;
     private static final String TAG = "CameraPlugin";
     private final static boolean IS_NEXUS_5X = Build.MODEL.equalsIgnoreCase("Nexus 5X");
     private final static boolean IS_HUAWEI_BRAND = Build.MANUFACTURER.equalsIgnoreCase("HUAWEI");
@@ -418,6 +415,14 @@ public class CameraPlugin implements MethodCallHandler {
         throw (RuntimeException) exception;
     }
 
+    private static class CompareSizesByWidth implements Comparator<Size> {
+        @Override
+        public int compare(Size lhs, Size rhs) {
+            // We cast here to ensure the multiplications won't overflow.
+            return lhs.getWidth() - rhs.getWidth();
+        }
+    }
+
     private static class CompareSizesByArea implements Comparator<Size> {
         @Override
         public int compare(Size lhs, Size rhs) {
@@ -489,9 +494,7 @@ public class CameraPlugin implements MethodCallHandler {
                 //noinspection ConstantConditions
                 sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
                 //noinspection ConstantConditions
-                isFrontFacing =
-                        characteristics.get(CameraCharacteristics.LENS_FACING)
-                                == CameraMetadata.LENS_FACING_FRONT;
+                isFrontFacing = characteristics.get(CameraCharacteristics.LENS_FACING) == CameraMetadata.LENS_FACING_FRONT;
                 computeBestCaptureSize(streamConfigurationMap);
                 computeBestPreviewAndRecordingSize(streamConfigurationMap, minHeight, captureSize);
                 if (cameraPermissionContinuation != null && currentResult != null) {
@@ -643,10 +646,20 @@ public class CameraPlugin implements MethodCallHandler {
 
         private void computeBestCaptureSize(StreamConfigurationMap streamConfigurationMap) {
             // For still image captures, we use the largest available size.
-            captureSize =
-                    Collections.max(
-                            Arrays.asList(streamConfigurationMap.getOutputSizes(ImageFormat.JPEG)),
-                            new CompareSizesByArea());
+            List<Size> sizeList = Arrays.asList(streamConfigurationMap.getOutputSizes(ImageFormat.JPEG));
+            Collections.sort(sizeList, new CompareSizesByWidth());
+            Size bestSize = null;
+            for (int i = 0; i < sizeList.size(); ++i) {
+                Size size = sizeList.get(i);
+                if (size.getWidth() >= MAX_IMAGE_WIDTH_CAPTURE) {
+                    bestSize = size;
+                    break;
+                }
+            }
+            if (bestSize == null) {
+                bestSize = sizeList.get(sizeList.size() - 1);
+            }
+            captureSize = bestSize;
         }
 
         private void prepareMediaRecorder(String outputFilePath) throws IOException {
