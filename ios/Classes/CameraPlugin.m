@@ -383,13 +383,13 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
                 NSDictionary *exifMetadata = [[metadata objectForKey:(NSString *)kCGImagePropertyExifDictionary] mutableCopy];
                 double brightnessValue = [[exifMetadata objectForKey:(NSString *)kCGImagePropertyExifBrightnessValue] doubleValue];
                 // Brightness level without Flash
-                // < 0      => Low
-                // 0 -> 4   => Normal
-                // > 4      => High
+                // < -2      => Low
+                // -2 -> 6   => Normal
+                // > 6      => High
                 int newBrightnessLevel = 0;
-                if (brightnessValue < 0) {
+                if (brightnessValue < -2) {
                     newBrightnessLevel = -1;
-                } else if (brightnessValue > 4) {
+                } else if (brightnessValue > 6) {
                     newBrightnessLevel = 1;
                 }
                 
