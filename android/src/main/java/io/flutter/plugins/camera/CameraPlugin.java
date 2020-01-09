@@ -708,7 +708,6 @@ public class CameraPlugin implements MethodCallHandler {
                                 @Override
                                 public void onOpened(@NonNull CameraDevice cameraDevice) {
                                     Camera.this.cameraDevice = cameraDevice;
-
                                     try {
                                         startPreview();
                                     } catch (CameraAccessException e) {
@@ -814,7 +813,7 @@ public class CameraPlugin implements MethodCallHandler {
             try {
                 // Reset the auto-focus trigger
                 captureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
-//            setAutoFlash(mPreviewRequestBuilder);
+//                setAutoFlash(captureRequestBuilder);
                 cameraCaptureSession.capture(captureRequestBuilder.build(), captureCallBackBack, null);
                 // After this, the camera will go back to the normal state of preview.
                 cameraState = CameraState.PREVIEW;
@@ -868,10 +867,7 @@ public class CameraPlugin implements MethodCallHandler {
                         Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
                         if (aeState == null || aeState != CaptureResult.CONTROL_AE_STATE_PRECAPTURE) {
                             cameraState = CameraState.TAKEN;
-                            if (currentResult != null) {
-                                currentResult.success(true);
-                                currentResult = null;
-                            }
+                            takePictureAfterPrecapture();
                         }
                         break;
                     }
@@ -895,12 +891,16 @@ public class CameraPlugin implements MethodCallHandler {
             @Override
             public void onCaptureFailed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
                 super.onCaptureFailed(session, request, failure);
-                if (currentResult != null) {
-                    currentResult.error("cameraAccess", failure.toString(), null);
-                    currentResult = null;
-                }
             }
         };
+
+        private void takePictureAfterPrecapture() {
+            if (currentResult != null) {
+                currentResult.success(true);
+                currentResult = null;
+            }
+
+        }
 
         /**
          * Run the precapture sequence for capturing a still image. This method should be called when
@@ -925,7 +925,8 @@ public class CameraPlugin implements MethodCallHandler {
                     new ImageReader.OnImageAvailableListener() {
                         @Override
                         public void onImageAvailable(ImageReader reader) {
-                            try (Image image = reader.acquireLatestImage()) {
+                            final Image image = reader.acquireNextImage();
+                            try {
                                 ByteBuffer buffer = image.getPlanes()[0].getBuffer();
                                 byte jpegBytes[] = new byte[buffer.remaining()];
                                 buffer.get(jpegBytes);
@@ -944,50 +945,69 @@ public class CameraPlugin implements MethodCallHandler {
                                     currentResult.error("IOError", "Convert image to base64 fail", null);
                                     currentResult = null;
                                 }
+                            } finally {
+                                image.close();
                             }
                         }
                     }, null);
-
             try {
+
                 final CaptureRequest.Builder captureBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+                captureBuilder.set(CaptureRequest.CONTROL_CAPTURE_INTENT, CaptureRequest.CONTROL_CAPTURE_INTENT_STILL_CAPTURE);
+                if (Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    // unclear why we wouldn't want to request ZSL
+                    // this is also required to enable HDR+ on Google Pixel devices when using Camera2: https://opensource.google.com/projects/pixelvisualcorecamera
+                    captureBuilder.set(CaptureRequest.CONTROL_ENABLE_ZSL, true);
+                }
                 captureBuilder.addTarget(pictureImageReader.getSurface());
+
+//                // Use the same AE and AF modes as the preview.
+                captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                setAutoFlash(captureBuilder);
+
+                // Orientation
                 int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
                 if (isFrontFacing) rotation = -rotation;
                 captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
+                CameraCaptureSession.CaptureCallback captureCallback
+                        = new CameraCaptureSession.CaptureCallback() {
+                    @Override
+                    public void onCaptureFailed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
+                        super.onCaptureFailed(session, request, failure);
+                        String reason;
+                        switch (failure.getReason()) {
+                            case CaptureFailure.REASON_ERROR:
+                                reason = "An error happened in the framework";
+                                break;
+                            case CaptureFailure.REASON_FLUSHED:
+                                reason = "The capture has failed due to an abortCaptures() call";
+                                break;
+                            default:
+                                reason = "Unknown reason";
+                        }
+                        if (currentResult != null) {
+                            currentResult.error("captureFailure", reason, null);
+                            currentResult = null;
+                        }
+                        unlockFocus();
+                        if (currentResult != null) {
+                            currentResult.error("cameraAccess", failure.toString(), null);
+                            currentResult = null;
+                        }
+                    }
+
+                    @Override
+                    public void onCaptureCompleted(@NonNull CameraCaptureSession session,
+                                                   @NonNull CaptureRequest request,
+                                                   @NonNull TotalCaptureResult result) {
+                        unlockFocus();
+                    }
+                };
+                cameraCaptureSession.stopRepeating();
                 cameraCaptureSession.capture(
-                        captureBuilder.build(),
-                        new CameraCaptureSession.CaptureCallback() {
-                            @Override
-                            public void onCaptureFailed(
-                                    @NonNull CameraCaptureSession session,
-                                    @NonNull CaptureRequest request,
-                                    @NonNull CaptureFailure failure) {
-                                String reason;
-                                switch (failure.getReason()) {
-                                    case CaptureFailure.REASON_ERROR:
-                                        reason = "An error happened in the framework";
-                                        break;
-                                    case CaptureFailure.REASON_FLUSHED:
-                                        reason = "The capture has failed due to an abortCaptures() call";
-                                        break;
-                                    default:
-                                        reason = "Unknown reason";
-                                }
-
-                                if (currentResult != null) {
-                                    currentResult.error("captureFailure", reason, null);
-                                    currentResult = null;
-                                }
-                                unlockFocus();
-                            }
-
-                            @Override
-                            public void onCaptureCompleted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
-                                super.onCaptureCompleted(session, request, result);
-                                unlockFocus();
-                            }
-                        },
-                        null);
+                        captureBuilder.build(), captureCallback, null);
+//                cameraCaptureSession.abortCaptures();
             } catch (CameraAccessException e) {
                 if (currentResult != null) {
                     currentResult.error("cameraAccess", e.getMessage(), null);
@@ -1084,13 +1104,14 @@ public class CameraPlugin implements MethodCallHandler {
             closeCaptureSession();
             SurfaceTexture surfaceTexture = textureEntry.surfaceTexture();
             surfaceTexture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
+            // This is the output Surface we need to start preview.
+            previewSurface = new Surface(surfaceTexture);
+
             captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            captureRequestBuilder.addTarget(previewSurface);
 
             List<Surface> surfaces = new ArrayList<>();
-
-            previewSurface = new Surface(surfaceTexture);
             surfaces.add(previewSurface);
-            captureRequestBuilder.addTarget(previewSurface);
             surfaces.add(pictureImageReader.getSurface());
 
             printLog("Preview: Configured camera capture session");
@@ -1106,15 +1127,14 @@ public class CameraPlugin implements MethodCallHandler {
                             }
                             try {
                                 cameraCaptureSession = session;
+                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                                setAutoFlash(captureRequestBuilder);
+                                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), captureCallBackBack, null);
                                 // complete start preview process
                                 if (currentResult != null) {
                                     currentResult.success(true);
                                     currentResult = null;
                                 }
-
-                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-                                setAutoFlash(captureRequestBuilder);
-                                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), captureCallBackBack, null);
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
                             }
@@ -1128,7 +1148,7 @@ public class CameraPlugin implements MethodCallHandler {
         }
 
         private void setAutoFlash(CaptureRequest.Builder requestBuilder) {
-            requestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
+            requestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH);
         }
 
         private void turnFlashLight(boolean turnOn) {
