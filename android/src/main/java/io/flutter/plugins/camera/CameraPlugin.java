@@ -470,6 +470,7 @@ public class CameraPlugin implements MethodCallHandler {
                 final boolean enableAudio) {
 
             this.cameraName = cameraName;
+            enableFlash = false;
             textureEntry = view.createSurfaceTexture();
             registerEventChannel();
             try {
@@ -856,8 +857,11 @@ public class CameraPlugin implements MethodCallHandler {
                         // CONTROL_AE_STATE can be null on some devices
                         Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
                         if (aeState == null ||
-                                aeState == CaptureResult.CONTROL_AE_STATE_PRECAPTURE ||
-                                aeState == CaptureRequest.CONTROL_AE_STATE_FLASH_REQUIRED) {
+                                aeState == CaptureResult.CONTROL_AE_STATE_PRECAPTURE ) {
+                            cameraState = CameraState.WAITING_NON_PRECAPTURE;
+                        }
+                        else if (aeState == CaptureRequest.CONTROL_AE_STATE_FLASH_REQUIRED){
+                            enableFlash = true;
                             cameraState = CameraState.WAITING_NON_PRECAPTURE;
                         }
                         break;
@@ -945,7 +949,8 @@ public class CameraPlugin implements MethodCallHandler {
                                     currentResult.error("IOError", "Convert image to base64 fail", null);
                                     currentResult = null;
                                 }
-                            } finally {
+                            }
+                            finally {
                                 image.close();
                             }
                         }
@@ -960,11 +965,15 @@ public class CameraPlugin implements MethodCallHandler {
                     captureBuilder.set(CaptureRequest.CONTROL_ENABLE_ZSL, true);
                 }
                 captureBuilder.addTarget(pictureImageReader.getSurface());
-
+                if(enableFlash){
+                    cameraCaptureSession.stopRepeating();
+                    captureRequestBuilder.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH );
+                    cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
+                }
 //                // Use the same AE and AF modes as the preview.
-                captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-                setAutoFlash(captureBuilder);
+//                captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+//                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+//                setAutoFlash(captureBuilder);
 
                 // Orientation
                 int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
@@ -1127,14 +1136,16 @@ public class CameraPlugin implements MethodCallHandler {
                             }
                             try {
                                 cameraCaptureSession = session;
-                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-                                setAutoFlash(captureRequestBuilder);
-                                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), captureCallBackBack, null);
                                 // complete start preview process
                                 if (currentResult != null) {
                                     currentResult.success(true);
                                     currentResult = null;
                                 }
+
+                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                                setAutoFlash(captureRequestBuilder);
+                                cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), captureCallBackBack, null);
+
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
                                 sendErrorEvent(e.getMessage());
                             }
@@ -1148,7 +1159,7 @@ public class CameraPlugin implements MethodCallHandler {
         }
 
         private void setAutoFlash(CaptureRequest.Builder requestBuilder) {
-            requestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_ALWAYS_FLASH);
+            requestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON_AUTO_FLASH);
         }
 
         private void turnFlashLight(boolean turnOn) {
