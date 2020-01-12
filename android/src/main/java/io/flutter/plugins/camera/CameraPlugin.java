@@ -5,7 +5,6 @@ import static android.view.OrientationEventListener.ORIENTATION_UNKNOWN;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.ImageFormat;
@@ -456,6 +455,7 @@ public class CameraPlugin implements MethodCallHandler {
         private boolean recordingVideo;
         private boolean enableAudio;
         private boolean enableFlash = false;
+        private Permission permission;
 
         Camera(
                 final String cameraName,
@@ -464,6 +464,7 @@ public class CameraPlugin implements MethodCallHandler {
 
             this.cameraName = cameraName;
             enableFlash = false;
+            permission = new Permission(registrar);
             textureEntry = view.createSurfaceTexture();
             registerEventChannel();
             try {
@@ -500,13 +501,13 @@ public class CameraPlugin implements MethodCallHandler {
                             @Override
                             public void run() {
                                 cameraPermissionContinuation = null;
-                                if (!hasCameraPermission() && currentResult != null) {
+                                if (!permission.hasCamera() && currentResult != null) {
                                     currentResult.error(
                                             " cameraPermission", "MediaRecorderCamera permission not granted", null);
                                     currentResult = null;
                                     return;
                                 }
-                                if (enableAudio && !hasAudioPermission() && currentResult != null) {
+                                if (enableAudio && !permission.hasAudio() && currentResult != null) {
                                     currentResult.error(
                                             "cameraPermission", "MediaRecorderAudio permission not granted", null);
                                     currentResult = null;
@@ -515,7 +516,7 @@ public class CameraPlugin implements MethodCallHandler {
                                 open();
                             }
                         };
-                if (hasCameraPermission() && (!enableAudio || hasAudioPermission())) {
+                if (permission.hasCamera() && (!enableAudio || permission.hasAudio())) {
                     cameraPermissionContinuation.run();
                 } else {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -561,27 +562,7 @@ public class CameraPlugin implements MethodCallHandler {
                             });
         }
 
-        private boolean hasCameraPermission() {
-            final Activity activity = registrar.activity();
-            if (activity == null) {
-                throw new IllegalStateException("No activity available!");
-            }
 
-            return Build.VERSION.SDK_INT < Build.VERSION_CODES.M
-                    || activity.checkSelfPermission(Manifest.permission.CAMERA)
-                    == PackageManager.PERMISSION_GRANTED;
-        }
-
-        private boolean hasAudioPermission() {
-            final Activity activity = registrar.activity();
-            if (activity == null) {
-                throw new IllegalStateException("No activity available!");
-            }
-
-            return Build.VERSION.SDK_INT < Build.VERSION_CODES.M
-                    || activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                    == PackageManager.PERMISSION_GRANTED;
-        }
 
         private void computeBestPreviewAndRecordingSize(StreamConfigurationMap streamConfigurationMap, int minHeight, Size captureSize) {
             Size[] sizes = streamConfigurationMap.getOutputSizes(SurfaceTexture.class);
@@ -679,7 +660,7 @@ public class CameraPlugin implements MethodCallHandler {
         }
 
         private void open() {
-            if (!hasCameraPermission()) {
+            if (!permission.hasCamera()) {
                 if (currentResult != null) {
                     currentResult.error("cameraPermission", "Camera permission not granted", null);
                     currentResult = null;
