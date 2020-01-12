@@ -10,3 +10,11 @@ pubspec.lock
 .flutter-plugins
 example/android/*
 android/*.iml
+android/.project
+android/.gradle/5.4.1/gc.properties
+android/.gradle/5.4.1/fileChanges/last-build.bin
+android/.gradle/5.4.1/fileHashes/fileHashes.lock
+android/.gradle/buildOutputCleanup/buildOutputCleanup.lock
+android/.gradle/buildOutputCleanup/cache.properties
+android/.gradle/vcs-1/gc.properties
+android/.settings/org.eclipse.buildship.core.prefs
