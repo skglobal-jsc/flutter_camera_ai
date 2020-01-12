@@ -70,14 +70,7 @@ public class CameraPlugin implements MethodCallHandler {
     private static final int MAX_IMAGE_WIDTH_CAPTURE = 1024;
     private static final String TAG = "CameraPlugin";
     private final static boolean IS_NEXUS_5X = Build.MODEL.equalsIgnoreCase("Nexus 5X");
-    private final static boolean IS_HUAWEI_BRAND = Build.MANUFACTURER.equalsIgnoreCase("HUAWEI");
-    private final String SONY_DEVICE = "Sony";
-    private final String FUJITSU_DEVICE = "FUJITSU";
-    private final String SAMSUNG_DEVICE = "samsung";
-    private final String HUAWEI_DEVICE = "huawei";
-    private final String XIAOMI_DEVICE = "Xiaomi";
     private final String GOOGLE_DEVICE = "Google";
-    private final static boolean IS_7_0_AND_ABOVE = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N;
 
     private static MethodChannel channel;
     private static CameraManager cameraManager;
