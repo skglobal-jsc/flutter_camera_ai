@@ -454,7 +454,7 @@ public class CameraPlugin implements MethodCallHandler {
         private MediaRecorder mediaRecorder;
         private boolean recordingVideo;
         private boolean enableAudio;
-        private boolean enableFlash = false;
+        private boolean enableFlash;
         private Permission permission;
 
         Camera(
@@ -804,7 +804,8 @@ public class CameraPlugin implements MethodCallHandler {
          */
         private CameraCaptureSession.CaptureCallback captureCallBackBack = new CameraCaptureSession.CaptureCallback() {
             private void process(CaptureResult result) {
-                Log.d("Camera Step:", "camera state " + cameraState);
+                printLog("Camera Step:" + cameraState);
+                printLog("enableFlash " + enableFlash);
                 switch (cameraState) {
                     case WAITING_LOCK: {
                         Integer afState = result.get(CaptureResult.CONTROL_AF_STATE);
@@ -824,12 +825,12 @@ public class CameraPlugin implements MethodCallHandler {
                                 runPreCaptureSequence();
                             }
                         }
-
                         break;
                     }
                     case WAITING_PRECAPTURE: {
                         // CONTROL_AE_STATE can be null on some devices
                         Integer aeState = result.get(CaptureResult.CONTROL_AE_STATE);
+                        printLog("WAITING_PRECAPTURE " + aeState);
                         if (aeState == null ||
                                 aeState == CaptureResult.CONTROL_AE_STATE_PRECAPTURE ) {
                             cameraState = CameraState.WAITING_NON_PRECAPTURE;
@@ -944,10 +945,10 @@ public class CameraPlugin implements MethodCallHandler {
                     captureRequestBuilder.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH );
                     cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), null, null);
                 }
-//                // Use the same AE and AF modes as the preview.
-//                captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
-//                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-//                setAutoFlash(captureBuilder);
+                // Use the same AE and AF modes as the preview.
+                captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                setAutoFlash(captureBuilder);
 
                 // Orientation
                 int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
@@ -1116,7 +1117,8 @@ public class CameraPlugin implements MethodCallHandler {
                                     currentResult = null;
                                 }
 
-                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                                captureRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
+                                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
                                 setAutoFlash(captureRequestBuilder);
                                 cameraCaptureSession.setRepeatingRequest(captureRequestBuilder.build(), captureCallBackBack, null);
 
