@@ -758,16 +758,16 @@ public class CameraPlugin implements MethodCallHandler {
             }
         }
 
-        private void requestFocus(){
-            if(currentBrightness == -1) {
+        private void requestFocus() {
+            if (needFlash()) {
                 printLog("takePictureWithFlash");
                 takePictureWithFlash();
-            }
-            else {
+            } else {
                 printLog("lockFocus");
                 lockFocus();
             }
         }
+
         /**
          * Lock the focus as the first step for a still image capture.
          */
@@ -786,6 +786,7 @@ public class CameraPlugin implements MethodCallHandler {
                 }
             }
         }
+
         private void takePictureWithFlash() {
             previewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON);
             previewRequestBuilder.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH);
@@ -808,6 +809,7 @@ public class CameraPlugin implements MethodCallHandler {
             try {
                 // Reset the auto-focus trigger
                 previewRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL);
+                previewRequestBuilder.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_OFF);
                 cameraCaptureSession.capture(previewRequestBuilder.build(), previewCallBackBack, null);
                 // After this, the camera will go back to the normal state of preview.
                 cameraState = CameraState.PREVIEW;
@@ -852,6 +854,8 @@ public class CameraPlugin implements MethodCallHandler {
                         printLog("WAITING_PRECAPTURE " + aeState);
                         if (aeState == null ||
                                 aeState == CaptureResult.CONTROL_AE_STATE_PRECAPTURE) {
+                            cameraState = CameraState.WAITING_NON_PRECAPTURE;
+                        } else {
                             cameraState = CameraState.WAITING_NON_PRECAPTURE;
                         }
                         break;
@@ -922,7 +926,7 @@ public class CameraPlugin implements MethodCallHandler {
                     ByteBuffer buffer = image.getPlanes()[0].getBuffer();
                     byte jpegBytes[] = new byte[buffer.remaining()];
                     buffer.get(jpegBytes);
-                    new Handler().post(new ImageSaver(jpegBytes,mFile));
+                    new Handler().post(new ImageSaver(jpegBytes, mFile));
                     final Bitmap imageBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
                     final String base64 = getBase64Image(imageBitmap);
                     if (currentResult != null) {
@@ -933,21 +937,27 @@ public class CameraPlugin implements MethodCallHandler {
                         }});
                         currentResult = null;
                     }
+                    unlockFocus();
 
                 } catch (Exception e) {
                     if (currentResult != null) {
                         currentResult.error("IOError", "Convert image to base64 fail", null);
                         currentResult = null;
                     }
-                }
-                finally {
+                } finally {
                     image.close();
+                    unlockFocus();
                     if (camera != null) {
                         camera.dispose();
                     }
                 }
             }
         };
+
+        private boolean needFlash() {
+            return currentBrightness == -1 || isFlashOn;
+        }
+
         private void captureStillImage() {
             try {
                 final CaptureRequest.Builder captureBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
@@ -959,7 +969,7 @@ public class CameraPlugin implements MethodCallHandler {
                     captureBuilder.set(CaptureRequest.CONTROL_ENABLE_ZSL, true);
                 }
 
-                if(currentBrightness == -1){
+                if (needFlash()) {
                     //Set AEmode
                     captureBuilder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON_ALWAYS_FLASH);
                     captureBuilder.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_OFF);
@@ -968,7 +978,7 @@ public class CameraPlugin implements MethodCallHandler {
                 //setFocusMode
                 captureBuilder.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO);
 
-                if(currentBrightness == -1){
+                if (needFlash()) {
                     captureBuilder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON);
                     captureBuilder.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH);
                 }
@@ -978,13 +988,13 @@ public class CameraPlugin implements MethodCallHandler {
                 if (isFrontFacing) rotation = -rotation;
                 captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation));
                 captureBuilder.addTarget(pictureImageReader.getSurface());
-
                 final CameraCaptureSession.CaptureCallback captureCallback
                         = new CameraCaptureSession.CaptureCallback() {
                     @Override
                     public void onCaptureFailed(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, @NonNull CaptureFailure failure) {
                         super.onCaptureFailed(session, request, failure);
                         String reason;
+                        unlockFocus();
                         switch (failure.getReason()) {
                             case CaptureFailure.REASON_ERROR:
                                 reason = "An error happened in the framework";
@@ -999,7 +1009,6 @@ public class CameraPlugin implements MethodCallHandler {
                             currentResult.error("captureFailure", reason, null);
                             currentResult = null;
                         }
-                        unlockFocus();
                         if (currentResult != null) {
                             currentResult.error("cameraAccess", failure.toString(), null);
                             currentResult = null;
@@ -1025,7 +1034,7 @@ public class CameraPlugin implements MethodCallHandler {
                             e.printStackTrace();
                         }
                     }
-                },1000);
+                }, 1000);
 
 //                cameraCaptureSession.abortCaptures();
             } catch (CameraAccessException e) {
@@ -1071,6 +1080,8 @@ public class CameraPlugin implements MethodCallHandler {
 
                                 previewRequestBuilder.set(CaptureRequest.CONTROL_AF_MODE,
                                         CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+//                                previewRequestBuilder.set(CaptureRequest.FLASH_MODE,
+//                                        isFlashOn ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
                                 cameraCaptureSession.setRepeatingRequest(previewRequestBuilder.build(), previewCallBackBack, null);
 
                             } catch (CameraAccessException | IllegalStateException | IllegalArgumentException e) {
@@ -1084,13 +1095,14 @@ public class CameraPlugin implements MethodCallHandler {
                         }
                     }, null);
         }
-        
+
         private void turnFlashLight(boolean turnOn) {
             try {
-                cameraCaptureSession.stopRepeating();
+//                cameraCaptureSession.stopRepeating();
+                previewRequestBuilder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON);
                 previewRequestBuilder.set(CaptureRequest.FLASH_MODE,
                         turnOn ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
-                cameraCaptureSession.setRepeatingRequest(previewRequestBuilder.build(), null, null);
+                cameraCaptureSession.setRepeatingRequest(previewRequestBuilder.build(), previewCallBackBack, null);
 
                 // notify for flutter layer
                 isFlashOn = turnOn;
@@ -1194,7 +1206,7 @@ public class CameraPlugin implements MethodCallHandler {
                         }
                     });
         }
-        private int latestBrightness = 0;
+
         private void setImageStreamImageAvailableListener(final EventChannel.EventSink eventSink) {
             imageStreamReader.setOnImageAvailableListener(
                     new ImageReader.OnImageAvailableListener() {
