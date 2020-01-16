@@ -926,7 +926,7 @@ public class CameraPlugin implements MethodCallHandler {
                     ByteBuffer buffer = image.getPlanes()[0].getBuffer();
                     byte jpegBytes[] = new byte[buffer.remaining()];
                     buffer.get(jpegBytes);
-                    new Handler().post(new ImageSaver(jpegBytes, mFile));
+//                    new Handler().post(new ImageSaver(jpegBytes,mFile));
                     final Bitmap imageBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.length);
                     final String base64 = getBase64Image(imageBitmap);
                     if (currentResult != null) {
