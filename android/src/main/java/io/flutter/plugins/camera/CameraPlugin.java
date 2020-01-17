@@ -968,7 +968,6 @@ public class CameraPlugin implements MethodCallHandler {
                     // https://opensource.google.com/projects/pixelvisualcorecamera
                     captureBuilder.set(CaptureRequest.CONTROL_ENABLE_ZSL, true);
                 }
-
                 if (needFlash()) {
                     //Set AEmode
                     captureBuilder.set(CaptureRequest.CONTROL_AE_MODE, CameraMetadata.CONTROL_AE_MODE_ON_ALWAYS_FLASH);
@@ -1162,6 +1161,9 @@ public class CameraPlugin implements MethodCallHandler {
                                 cameraCaptureSession = session;
                                 if (android.os.Build.MANUFACTURER.equalsIgnoreCase(GOOGLE_DEVICE)) {
                                     previewRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+                                }
+                                else {
+                                    previewRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
                                 }
                                 previewRequestBuilder.set(CaptureRequest.FLASH_MODE,
                                         isFlashOn ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
@@ -1414,7 +1416,6 @@ public class CameraPlugin implements MethodCallHandler {
 
 
         int counter = 3;
-
         /**
          * Read camera state and detect is stable
          *
