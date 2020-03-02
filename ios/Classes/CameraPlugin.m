@@ -80,18 +80,17 @@ previewPhotoSampleBuffer:(CMSampleBufferRef)previewPhotoSampleBuffer
     
     NSString *base64String = [UIImageJPEGRepresentation(image, 1.0) base64EncodedStringWithOptions:NSDataBase64Encoding64CharacterLineLength];
     
-    _result(@{
-        @"base64String": base64String,
-        @"width": [NSNumber numberWithInt:(int)image.size.width],
-        @"height": [NSNumber numberWithInt:(int)image.size.height]
-    });
-    
     bool success = [UIImageJPEGRepresentation(image, 1.0) writeToFile:_path atomically:YES];
     if (!success) {
         _result([FlutterError errorWithCode:@"IOError" message:@"Unable to write file" details:nil]);
         return;
     }
-//    _result(nil);
+
+    _result(@{
+        @"base64String": base64String,
+        @"width": [NSNumber numberWithInt:(int)image.size.width],
+        @"height": [NSNumber numberWithInt:(int)image.size.height]
+    });
 }
 
 - (UIImageOrientation)getImageRotation {
