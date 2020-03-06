@@ -137,6 +137,14 @@ Future<bool> compareFrame(int w, int h, Uint8List img1, Uint8List img2) async {
   );
 }
 
+Future<BrightnessLevel> getBrightness() async {
+  int v = await _channel.invokeMethod('getBrightness');
+  if (v == -100) return BrightnessLevel.normal;
+  if (v > 0) return BrightnessLevel.high;
+  if (v < 0) return BrightnessLevel.low;
+  return BrightnessLevel.normal;
+}
+
 class CameraDescription {
   CameraDescription({this.name, this.lensDirection, this.sensorOrientation});
 

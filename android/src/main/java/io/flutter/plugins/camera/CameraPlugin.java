@@ -104,6 +104,8 @@ public class CameraPlugin implements MethodCallHandler {
     // Keep result for delay methods
     private Result currentResult;
 
+    private boolean requestBrightness = false;
+
     static {
         ORIENTATIONS.append(Surface.ROTATION_0, 0);
         ORIENTATIONS.append(Surface.ROTATION_90, 90);
@@ -122,7 +124,7 @@ public class CameraPlugin implements MethodCallHandler {
     private CameraState cameraState = CameraState.PREVIEW;
 
     private CameraPlugin(Registrar registrar, FlutterView view) {
-        MovingDetectorJNI.newInstance();
+//        MovingDetectorJNI.newInstance();
         this.registrar = registrar;
         this.view = view;
         this.activity = registrar.activity();
@@ -342,15 +344,15 @@ public class CameraPlugin implements MethodCallHandler {
                 break;
             }
             case "compareFrame": {
-                byte[] bytesOfImg1 = call.argument("bytesOfImg1");
-                byte[] bytesOfImg2 = call.argument("bytesOfImg2");
-                int w = call.argument("width");
-                int h = call.argument("height");
-                boolean isDiff = camera.isDiffFrame(w, h, bytesOfImg1, bytesOfImg2);
-                if (currentResult != null) {
-                    currentResult.success(isDiff);
-                    currentResult = null;
-                }
+//                byte[] bytesOfImg1 = call.argument("bytesOfImg1");
+//                byte[] bytesOfImg2 = call.argument("bytesOfImg2");
+//                int w = call.argument("width");
+//                int h = call.argument("height");
+//                boolean isDiff = camera.isDiffFrame(w, h, bytesOfImg1, bytesOfImg2);
+//                if (currentResult != null) {
+//                    currentResult.success(isDiff);
+//                    currentResult = null;
+//                }
                 break;
             }
             case "setFrameModeEnable": {
@@ -388,6 +390,11 @@ public class CameraPlugin implements MethodCallHandler {
                 break;
             }
 
+            case "getBrightness": {
+                requestBrightness = true;
+                break;
+            }
+
             // For debugs only
 //            case "setStartRotation": {
 //                int rotate = (int) call.arguments;
@@ -415,6 +422,14 @@ public class CameraPlugin implements MethodCallHandler {
         }
 
         throw (RuntimeException) exception;
+    }
+
+    private static class CompareSizesByHeight implements Comparator<Size> {
+        @Override
+        public int compare(Size lhs, Size rhs) {
+            // We cast here to ensure the multiplications won't overflow.
+            return lhs.getHeight() - rhs.getHeight();
+        }
     }
 
     private static class CompareSizesByWidth implements Comparator<Size> {
@@ -573,58 +588,82 @@ public class CameraPlugin implements MethodCallHandler {
 
 
         private void computeBestPreviewAndRecordingSize(StreamConfigurationMap streamConfigurationMap, int minHeight, Size captureSize) {
-            Size[] sizes = streamConfigurationMap.getOutputSizes(SurfaceTexture.class);
+//            Size[] sizes = streamConfigurationMap.getOutputSizes(SurfaceTexture.class);
+            List<Size> sizeList = Arrays.asList(streamConfigurationMap.getOutputSizes(SurfaceTexture.class));
 
-            // Preview size and video size should not be greater than screen resolution or 1080.
-            Point screenResolution = new Point();
-
-            final Activity activity = registrar.activity();
-            if (activity == null) {
-                throw new IllegalStateException("No activity available!");
-            }
-
-            Display display = activity.getWindowManager().getDefaultDisplay();
-            display.getRealSize(screenResolution);
-
-            final boolean swapWH = getMediaOrientation() % 180 == 90;
-            int screenWidth = swapWH ? screenResolution.y : screenResolution.x;
-            int screenHeight = swapWH ? screenResolution.x : screenResolution.y;
-
-            List<Size> goodEnough = new ArrayList<>();
-            for (Size s : sizes) {
-                if (minHeight <= s.getHeight()
-                        && s.getWidth() <= screenWidth
-                        && s.getHeight() <= screenHeight
-                        && s.getHeight() <= 1080) {
-                    goodEnough.add(s);
+            Collections.sort(sizeList, new CompareSizesByHeight());
+            Size bestSize = null;
+            for (int i = 0; i < sizeList.size(); ++i) {
+                Size size = sizeList.get(i);
+                if (size.getHeight() >= minHeight) {
+                    bestSize = size;
+                    break;
                 }
             }
+            if (bestSize == null) {
+                bestSize = sizeList.get(sizeList.size() - 1);
+            }
 
-            Collections.sort(goodEnough, new CompareSizesByArea());
 
-            if (goodEnough.isEmpty()) {
-                previewSize = sizes[0];
-                videoSize = sizes[0];
+
+            if (bestSize != null) {
+                Log.d(TAG, "WxH = " + bestSize.getWidth() + " x " + bestSize.getHeight());
             } else {
-                float captureSizeRatio = (float) captureSize.getWidth() / captureSize.getHeight();
-
-                previewSize = goodEnough.get(0);
-                for (Size s : goodEnough) {
-                    if ((float) s.getWidth() / s.getHeight() == captureSizeRatio) {
-                        previewSize = s;
-                        break;
-                    }
-                }
-
-                Collections.reverse(goodEnough);
-                videoSize = goodEnough.get(0);
-                for (Size s : goodEnough) {
-                    if ((float) s.getWidth() / s.getHeight() == captureSizeRatio) {
-                        videoSize = s;
-                        break;
-                    }
-                }
+                Log.d(TAG, "Loi tai Phuc!");
             }
+//            // Preview size and video size should not be greater than screen resolution or 1080.
+//            Point screenResolution = new Point();
+//
+//            final Activity activity = registrar.activity();
+//            if (activity == null) {
+//                throw new IllegalStateException("No activity available!");
+//            }
+//
+//            Display display = activity.getWindowManager().getDefaultDisplay();
+//            display.getRealSize(screenResolution);
+//
+//            final boolean swapWH = getMediaOrientation() % 180 == 90;
+//            int screenWidth = swapWH ? screenResolution.y : screenResolution.x;
+//            int screenHeight = swapWH ? screenResolution.x : screenResolution.y;
+//
+//            List<Size> goodEnough = new ArrayList<>();
+//            for (Size s : sizes) {
+//                if (minHeight <= s.getHeight()
+//                        && s.getWidth() <= screenWidth
+//                        && s.getHeight() <= screenHeight
+//                        && s.getHeight() <= 1080) {
+//                    goodEnough.add(s);
+//                }
+//            }
+//
+//            Collections.sort(goodEnough, new CompareSizesByArea());
+
+//            if (goodEnough.isEmpty()) {
+//                previewSize = sizes[0];
+//                videoSize = sizes[0];
+//            } else {
+//            if (bestSize != null) {
+                previewSize = bestSize;
+                videoSize = bestSize;
+//            } else {
+//                float captureSizeRatio = (float) captureSize.getWidth() / captureSize.getHeight();
+//                previewSize = goodEnough.get(0);
+//                for (Size s : goodEnough) {
+//                    if ((float) s.getWidth() / s.getHeight() == captureSizeRatio) {
+//                        previewSize = s;
+//                        break;
+//                    }
+//                }
+//
+//                Collections.reverse(goodEnough);
+//                videoSize = goodEnough.get(0);
+//                for (Size s : goodEnough) {
+//                    if ((float) s.getWidth() / s.getHeight() == captureSizeRatio) {
+//                        videoSize = s;
+//                        break;
+//                    }
+//                }
+//            }
         }
 
         private void computeBestCaptureSize(StreamConfigurationMap streamConfigurationMap) {
@@ -1209,6 +1248,7 @@ public class CameraPlugin implements MethodCallHandler {
                     });
         }
 
+//        int c = 0;
         private void setImageStreamImageAvailableListener(final EventChannel.EventSink eventSink) {
             imageStreamReader.setOnImageAvailableListener(
                     new ImageReader.OnImageAvailableListener() {
@@ -1217,25 +1257,38 @@ public class CameraPlugin implements MethodCallHandler {
                             Image image = reader.acquireLatestImage();
                             if (image == null) return;
 
-                            // Parse brightness session
-                            int brightness = parseBrightnessValue(image);
-                            if (brightness != -100) {
-                                if (brightness == tempBrightness) {
-                                    brightnessThreshold++;
-                                } else {
-                                    tempBrightness = brightness;
-                                    brightnessThreshold = 0;
-                                }
-                                if (brightnessThreshold > THRESHOLD_MAX) {
-                                    brightnessThreshold = 0;
-                                    // Notify in changed only
-                                    if (currentBrightness != tempBrightness) {
-                                        currentBrightness = tempBrightness;
-                                        channel.invokeMethod("camera.brightnessLevel", currentBrightness);
-                                        printLog("camera.brightnessLevel" + currentBrightness);
-                                    }
+                            if (requestBrightness) {
+                                requestBrightness = false;
+                                int brightness = parseBrightnessValue(image);
+                                if (currentResult != null) {
+                                    currentResult.success(brightness);
+                                    currentResult = null;
                                 }
                             }
+
+//                            c++;
+//                            if (c > 5) {
+//                                c = 0;
+//                                // Parse brightness session
+//                                int brightness = parseBrightnessValue(image);
+//                                if (brightness != -100) {
+//                                    if (brightness == tempBrightness) {
+//                                        brightnessThreshold++;
+//                                    } else {
+//                                        tempBrightness = brightness;
+//                                        brightnessThreshold = 0;
+//                                    }
+//                                    if (brightnessThreshold > THRESHOLD_MAX) {
+//                                        brightnessThreshold = 0;
+//                                        // Notify in changed only
+//                                        if (currentBrightness != tempBrightness) {
+//                                            currentBrightness = tempBrightness;
+//                                            channel.invokeMethod("camera.brightnessLevel", currentBrightness);
+//                                            printLog("camera.brightnessLevel" + currentBrightness);
+//                                        }
+//                                    }
+//                                }
+//                            }
 
                             // Parse frame session
                             List<Map<String, Object>> planes = new ArrayList<>();
@@ -1265,9 +1318,9 @@ public class CameraPlugin implements MethodCallHandler {
                             eventSink.success(imageBuffer);
 
 //                            // read stable status use native-lib of Giang san
-                            if (isFrameMode) {
-                                handleStableStateFrameByFrame(image.getWidth(), image.getHeight(), buffers);
-                            }
+//                            if (isFrameMode) {
+//                                handleStableStateFrameByFrame(image.getWidth(), image.getHeight(), buffers);
+//                            }
 
                             // force close img object
                             image.close();
@@ -1336,133 +1389,133 @@ public class CameraPlugin implements MethodCallHandler {
             return clone;
         }
 
-        private boolean isDiffFrame(int w, int h, byte[] img1, byte[] img2) {
+//        private boolean isDiffFrame(int w, int h, byte[] img1, byte[] img2) {
+//
+//            try {
+//                Mat input1 = new Mat(h + h / 2, w, CvType.CV_8UC1);
+//                Mat bgra1 = new Mat(h + h / 2, w, CvType.CV_8UC4);
+//                input1.put(0, 0, img1);
+//                Imgproc.cvtColor(input1, bgra1, Imgproc.COLOR_YUV420sp2BGRA);
+//                if (IS_NEXUS_5X) {
+//                    Core.flip(bgra1.t(), bgra1, 0);
+//                } else {
+//                    Core.flip(bgra1.t(), bgra1, 1);
+//                }
+//
+//
+//                Mat input2 = new Mat(h + h / 2, w, CvType.CV_8UC1);
+//                Mat bgra2 = new Mat(h + h / 2, w, CvType.CV_8UC4);
+//                input2.put(0, 0, img2);
+//                Imgproc.cvtColor(input2, bgra2, Imgproc.COLOR_YUV420sp2BGRA);
+//                if (IS_NEXUS_5X) {
+//                    Core.flip(bgra2.t(), bgra2, 0);
+//                } else {
+//                    Core.flip(bgra2.t(), bgra2, 1);
+//                }
+//
+//                return MovingDetectorJNI.newInstance().isDiff(bgra1, bgra2) == 1.0;
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//            }
+//            return false;
+//        }
 
-            try {
-                Mat input1 = new Mat(h + h / 2, w, CvType.CV_8UC1);
-                Mat bgra1 = new Mat(h + h / 2, w, CvType.CV_8UC4);
-                input1.put(0, 0, img1);
-                Imgproc.cvtColor(input1, bgra1, Imgproc.COLOR_YUV420sp2BGRA);
-                if (IS_NEXUS_5X) {
-                    Core.flip(bgra1.t(), bgra1, 0);
-                } else {
-                    Core.flip(bgra1.t(), bgra1, 1);
-                }
+//        private void fastFrame(Image image) {
+//            try {
+//                int w = image.getWidth();
+//                int h = image.getHeight();
+//
+//                ByteBuffer bufferY = image.getPlanes()[0].getBuffer();
+//                ByteBuffer bufferU = image.getPlanes()[1].getBuffer();
+//                ByteBuffer bufferV = image.getPlanes()[2].getBuffer();
+//                ByteBuffer buffer = ByteBuffer.allocateDirect(bufferY.capacity() + bufferU.capacity() + bufferV.capacity());
+//                buffer.put(bufferY);
+//                buffer.put(bufferU);
+//                buffer.put(bufferV);
+//                buffer.compact();
+//
+//                byte[] bytes = buffer.array();
+//                Mat input = new Mat(h + h / 2, w, CvType.CV_8UC1);
+//                Mat bgra = new Mat(h + h / 2, w, CvType.CV_8UC4);
+//                input.put(0, 0, bytes);
+//                Imgproc.cvtColor(input, bgra, Imgproc.COLOR_YUV420sp2BGRA);
+//                if (IS_NEXUS_5X) {
+//                    Core.flip(bgra.t(), bgra, 0);
+//                } else {
+//                    Core.flip(bgra.t(), bgra, 1);
+//                }
+//
+////                Log.d("CardDetector", "frameUpdated >> bytesToMat");
+////                Log.d(TAG, "WH: " + image.getWidth() + "x" + image.getHeight());
+//
+////                Mat mat = CardDetectorJNI.newInstance().debug(bgra.nativeObj);
+////                File path = new File(Environment.getExternalStorageDirectory() + "/Images/");
+////                path.mkdirs();
+////                File file = new File(path, "image" + System.currentTimeMillis() + "_converted.png");
+////                String filename = file.toString();
+////                Imgcodecs.imwrite(filename, mat);
+//
+//                float stableValue = MovingDetectorJNI.newInstance().isStable(bgra);
+//                channel.invokeMethod("camera.stableDetected", stableValue == 1.0);
+//
+////                bytes = null;
+////                bgra = new Mat();
+////                input = new Mat();
+//
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//            }
+//        }
 
 
-                Mat input2 = new Mat(h + h / 2, w, CvType.CV_8UC1);
-                Mat bgra2 = new Mat(h + h / 2, w, CvType.CV_8UC4);
-                input2.put(0, 0, img2);
-                Imgproc.cvtColor(input2, bgra2, Imgproc.COLOR_YUV420sp2BGRA);
-                if (IS_NEXUS_5X) {
-                    Core.flip(bgra2.t(), bgra2, 0);
-                } else {
-                    Core.flip(bgra2.t(), bgra2, 1);
-                }
-
-                return MovingDetectorJNI.newInstance().isDiff(bgra1, bgra2) == 1.0;
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-            return false;
-        }
-
-        private void fastFrame(Image image) {
-            try {
-                int w = image.getWidth();
-                int h = image.getHeight();
-
-                ByteBuffer bufferY = image.getPlanes()[0].getBuffer();
-                ByteBuffer bufferU = image.getPlanes()[1].getBuffer();
-                ByteBuffer bufferV = image.getPlanes()[2].getBuffer();
-                ByteBuffer buffer = ByteBuffer.allocateDirect(bufferY.capacity() + bufferU.capacity() + bufferV.capacity());
-                buffer.put(bufferY);
-                buffer.put(bufferU);
-                buffer.put(bufferV);
-                buffer.compact();
-
-                byte[] bytes = buffer.array();
-                Mat input = new Mat(h + h / 2, w, CvType.CV_8UC1);
-                Mat bgra = new Mat(h + h / 2, w, CvType.CV_8UC4);
-                input.put(0, 0, bytes);
-                Imgproc.cvtColor(input, bgra, Imgproc.COLOR_YUV420sp2BGRA);
-                if (IS_NEXUS_5X) {
-                    Core.flip(bgra.t(), bgra, 0);
-                } else {
-                    Core.flip(bgra.t(), bgra, 1);
-                }
-
-//                Log.d("CardDetector", "frameUpdated >> bytesToMat");
-//                Log.d(TAG, "WH: " + image.getWidth() + "x" + image.getHeight());
-
-//                Mat mat = CardDetectorJNI.newInstance().debug(bgra.nativeObj);
-//                File path = new File(Environment.getExternalStorageDirectory() + "/Images/");
-//                path.mkdirs();
-//                File file = new File(path, "image" + System.currentTimeMillis() + "_converted.png");
-//                String filename = file.toString();
-//                Imgcodecs.imwrite(filename, mat);
-
-                float stableValue = MovingDetectorJNI.newInstance().isStable(bgra);
-                channel.invokeMethod("camera.stableDetected", stableValue == 1.0);
-
-//                bytes = null;
-//                bgra = new Mat();
-//                input = new Mat();
-
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-
-
-        int counter = 3;
-        /**
-         * Read camera state and detect is stable
-         *
-         * @param w       of image
-         * @param h       of image
-         * @param buffers will contents 3 elements, as Y,U,V match to position 0,1,2
-         */
-        private void handleStableStateFrameByFrame(int w, int h, ByteBuffer[] buffers) {
-            if (counter > 0) {
-                counter--;
-                return;
-            }
-            counter = 3;
-            try {
-                ByteBuffer buffer = ByteBuffer.allocate(buffers[0].capacity() + buffers[1].capacity() + buffers[2].capacity());
-                buffer.put(buffers[0]);
-                buffer.put(buffers[1]);
-                buffer.put(buffers[2]);
-                buffer.compact();
-
-                byte[] bytes = buffer.array();
-                Mat input = new Mat(h + h / 2, w, CvType.CV_8UC1);
-                Mat bgra = new Mat(h + h / 2, w, CvType.CV_8UC4);
-                input.put(0, 0, bytes);
-                Imgproc.cvtColor(input, bgra, Imgproc.COLOR_YUV420sp2BGRA);
-                if (IS_NEXUS_5X) {
-                    Core.flip(bgra.t(), bgra, 0);
-                } else {
-                    Core.flip(bgra.t(), bgra, 1);
-                }
-
-//                Log.d("CardDetector", "frameUpdated >> bytesToMat");
-//                Log.d(TAG, "WH: " + image.getWidth() + "x" + image.getHeight());
-
-//                Mat mat = CardDetectorJNI.newInstance().debug(bgra.nativeObj);
-//                File path = new File(Environment.getExternalStorageDirectory() + "/Images/");
-//                path.mkdirs();
-//                File file = new File(path, "image" + System.currentTimeMillis() + "_converted.png");
-//                String filename = file.toString();
-//                Imgcodecs.imwrite(filename, mat);
-
-                float stableValue = MovingDetectorJNI.newInstance().isStable(bgra);
-                channel.invokeMethod("camera.stableDetected", stableValue == 1.0);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
+//        int counter = 3;
+//        /**
+//         * Read camera state and detect is stable
+//         *
+//         * @param w       of image
+//         * @param h       of image
+//         * @param buffers will contents 3 elements, as Y,U,V match to position 0,1,2
+//         */
+//        private void handleStableStateFrameByFrame(int w, int h, ByteBuffer[] buffers) {
+//            if (counter > 0) {
+//                counter--;
+//                return;
+//            }
+//            counter = 3;
+//            try {
+//                ByteBuffer buffer = ByteBuffer.allocate(buffers[0].capacity() + buffers[1].capacity() + buffers[2].capacity());
+//                buffer.put(buffers[0]);
+//                buffer.put(buffers[1]);
+//                buffer.put(buffers[2]);
+//                buffer.compact();
+//
+//                byte[] bytes = buffer.array();
+//                Mat input = new Mat(h + h / 2, w, CvType.CV_8UC1);
+//                Mat bgra = new Mat(h + h / 2, w, CvType.CV_8UC4);
+//                input.put(0, 0, bytes);
+//                Imgproc.cvtColor(input, bgra, Imgproc.COLOR_YUV420sp2BGRA);
+//                if (IS_NEXUS_5X) {
+//                    Core.flip(bgra.t(), bgra, 0);
+//                } else {
+//                    Core.flip(bgra.t(), bgra, 1);
+//                }
+//
+////                Log.d("CardDetector", "frameUpdated >> bytesToMat");
+////                Log.d(TAG, "WH: " + image.getWidth() + "x" + image.getHeight());
+//
+////                Mat mat = CardDetectorJNI.newInstance().debug(bgra.nativeObj);
+////                File path = new File(Environment.getExternalStorageDirectory() + "/Images/");
+////                path.mkdirs();
+////                File file = new File(path, "image" + System.currentTimeMillis() + "_converted.png");
+////                String filename = file.toString();
+////                Imgcodecs.imwrite(filename, mat);
+//
+//                float stableValue = MovingDetectorJNI.newInstance().isStable(bgra);
+//                channel.invokeMethod("camera.stableDetected", stableValue == 1.0);
+//            } catch (Exception e) {
+//                e.printStackTrace();
+//            }
+//        }
 
         private void sendErrorEvent(String errorDescription) {
             if (currentResult != null) {
