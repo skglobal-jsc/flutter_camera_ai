@@ -388,7 +388,7 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
                 int newBrightnessLevel = 0;
                 if (brightnessValue < -2) {
                     newBrightnessLevel = -1;
-                } else if (brightnessValue > 6) {
+                } else if (brightnessValue > 16) {
                     newBrightnessLevel = 1;
                 }
                 
