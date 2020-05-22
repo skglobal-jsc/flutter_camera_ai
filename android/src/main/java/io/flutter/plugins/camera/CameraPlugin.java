@@ -136,7 +136,8 @@ public class CameraPlugin implements MethodCallHandler {
                     @Override
                     public void onOrientationChanged(int i) {
                         if (i == ORIENTATION_UNKNOWN) {
-                            return;
+                            i = 0; // Set to portrait when unknown orientation (table paralel case)
+//                            return;
                         }
                         // Convert the raw deg angle to the nearest multiple of 90.
                         int currentOrientation = ((int) Math.round(i / 90.0) * 90) % 360;
